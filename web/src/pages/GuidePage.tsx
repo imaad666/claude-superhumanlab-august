@@ -9,32 +9,30 @@ export function GuidePage() {
 
       <header className="landing-hero">
         <p className="eyebrow">Speech Guide</p>
-        <h1 className="brand brand-sm">How do you want to listen?</h1>
+        <h1 className="brand brand-sm">Pick your mode</h1>
         <p className="lede">
-          Two modes — one for practicing your own voice, one for reading someone
-          else’s.
+          Practice your own voice, or listen along when someone else is
+          speaking.
         </p>
       </header>
 
       <nav className="paths" aria-label="Choose a mode">
         <Link className="path" to="/guide/trainer">
-          <span className="path-kicker">You</span>
           <span className="path-title">Personal Trainer</span>
           <span className="path-desc">
             Face the camera. Speak. Get encouraging, word-by-word feedback on
             pronunciation, tone, and stress.
           </span>
-          <span className="path-cta">Start practice →</span>
+          <span className="btn btn-accent btn-in-card">Start practice →</span>
         </Link>
 
         <Link className="path" to="/guide/live">
-          <span className="path-kicker">Someone else</span>
           <span className="path-title">Live Guide</span>
           <span className="path-desc">
-            Point the camera at a speaker — a teacher, a friend — and see tone,
-            emphasis, and speech patterns in real time.
+            Point the camera at a teacher or friend — see tone, emphasis, and
+            speech patterns in real time.
           </span>
-          <span className="path-cta">Start live →</span>
+          <span className="btn btn-primary btn-in-card">Start live →</span>
         </Link>
       </nav>
     </main>

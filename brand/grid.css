@@ -1,26 +1,31 @@
-/* Claude-like paper grid — CSS only, no image asset */
+/* Claude-like paper grid — warmer wash */
 
 .app-bg {
   min-height: 100vh;
   background-color: var(--bg);
   background-image:
+    radial-gradient(
+      ellipse 90% 60% at 10% 0%,
+      rgba(232, 115, 42, 0.16),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 95% 85%,
+      rgba(168, 68, 24, 0.1),
+      transparent 50%
+    ),
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
-  background-size: 24px 24px;
-  background-position: -1px -1px;
-}
-
-.app-bg::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 50%,
-    rgba(74, 58, 40, 0.06) 100%
-  );
+  background-size:
+    auto,
+    auto,
+    24px 24px,
+    24px 24px;
+  background-position:
+    0 0,
+    0 0,
+    -1px -1px,
+    -1px -1px;
 }
 
 .app-bg > * {

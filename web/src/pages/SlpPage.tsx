@@ -9,16 +9,21 @@ export function SlpPage() {
 
       <header className="landing-hero">
         <p className="eyebrow">Speech-Language Pathology</p>
-        <h1 className="brand brand-sm">Coming next</h1>
+        <h1 className="brand brand-sm">Made for young learners</h1>
         <p className="lede">
-          Therapist-led content for younger learners will live here. For the
-          hackathon, we’re building Speech Guide first.
+          Therapist-led content for kids will live here. For the hackathon,
+          Speech Guide is ready to explore.
         </p>
-      </header>
 
-      <Link className="btn btn-primary" to="/guide">
-        Go to Speech Guide →
-      </Link>
+        <div className="hero-actions">
+          <Link className="btn btn-accent" to="/guide">
+            Try Speech Guide
+          </Link>
+          <Link className="btn btn-ghost" to="/guide/trainer">
+            Quick practice
+          </Link>
+        </div>
+      </header>
     </main>
   );
 }

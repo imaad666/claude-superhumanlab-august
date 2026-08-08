@@ -1,8 +1,8 @@
 .landing {
   min-height: 100vh;
-  max-width: 920px;
+  max-width: 960px;
   margin: 0 auto;
-  padding: clamp(2.5rem, 8vh, 5rem) var(--space-6) var(--space-12);
+  padding: clamp(2rem, 7vh, 4.5rem) var(--space-6) var(--space-12);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -10,7 +10,7 @@
 }
 
 .landing-narrow {
-  max-width: 720px;
+  max-width: 760px;
 }
 
 .landing-hero {
@@ -18,20 +18,29 @@
 }
 
 .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 var(--space-3);
-  font-size: 0.75rem;
+  padding: 6px 12px;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(214, 90, 31, 0.22);
+  font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-tertiary);
+  color: var(--accent-deep);
 }
 
 .brand {
   margin: 0 0 var(--space-4);
   font-family: var(--font-display);
-  font-size: clamp(3rem, 8vw, 4.25rem);
+  font-size: clamp(3rem, 8vw, 4.4rem);
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1.05;
+  color: var(--ink);
 }
 
 .brand-sm {
@@ -40,9 +49,16 @@
 
 .lede {
   margin: 0;
-  max-width: 36ch;
-  font-size: 1.125rem;
+  max-width: 38ch;
+  font-size: 1.15rem;
   color: var(--ink-secondary);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
 }
 
 .back {
@@ -67,20 +83,26 @@
 }
 
 .path {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-3);
-  min-height: 280px;
+  min-height: 300px;
   height: 100%;
   padding: var(--space-6);
-  border: 1px solid var(--line-strong);
+  border: 1.5px solid var(--line-strong);
   border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  background: linear-gradient(
+    165deg,
+    var(--bg-elevated) 0%,
+    #f3dcc0 100%
+  );
+  overflow: hidden;
   transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    background 180ms ease;
+    transform 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
   animation: rise 640ms ease both;
 }
 
@@ -89,9 +111,9 @@
 }
 
 .path:hover {
-  transform: translateY(-2px);
-  border-color: rgba(74, 58, 40, 0.28);
-  background: #f7ecdb;
+  transform: translateY(-4px);
+  border-color: rgba(214, 90, 31, 0.45);
+  box-shadow: 0 14px 32px rgba(90, 52, 24, 0.12);
 }
 
 .path:focus-visible {
@@ -99,16 +121,9 @@
   outline-offset: 3px;
 }
 
-.path-kicker {
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
 .path-title {
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: 1.6rem;
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -120,41 +135,163 @@
   font-size: 0.98rem;
 }
 
-.path-cta {
+.path-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
   margin-top: auto;
   padding-top: var(--space-2);
-  font-size: 0.95rem;
-  color: var(--ink);
+}
+
+.rotating-label {
+  display: inline-block;
+  min-height: 1.4em;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-deep);
+  transition:
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.rotating-label.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.rotating-label.is-out {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.path-slp .rotating-label {
+  color: var(--accent-deep);
+}
+
+.path-guide .rotating-label {
+  color: #8a4a28;
 }
 
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   width: fit-content;
-  padding: 10px 18px;
+  padding: 11px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--line-strong);
-  background: var(--bg-elevated);
+  border: 1.5px solid transparent;
   font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
-  animation: rise 560ms ease both;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
 }
 
 .btn-primary {
   background: var(--ink);
   color: var(--ink-inverse);
   border-color: var(--ink);
-  transition: background 160ms ease;
 }
 
 .btn-primary:hover {
-  background: #3d3228;
+  background: #3d2a1c;
+}
+
+.btn-accent {
+  background: linear-gradient(135deg, var(--accent-hot), var(--accent));
+  color: #fff8f1;
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(214, 90, 31, 0.28);
+}
+
+.btn-accent:hover {
+  background: linear-gradient(135deg, #f0843a, var(--accent-deep));
+}
+
+.btn-ghost {
+  background: rgba(255, 246, 234, 0.55);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-elevated);
+  border-color: rgba(214, 90, 31, 0.35);
+}
+
+.btn-in-card {
+  margin-top: 0;
+  pointer-events: none;
+}
+
+.fun-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5, 20px);
+  border-radius: var(--radius-lg);
+  border: 1.5px dashed rgba(214, 90, 31, 0.35);
+  background: rgba(255, 246, 234, 0.45);
+  animation: rise 720ms ease both;
+}
+
+.fun-strip-label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.fun-strip-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1.5px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.chip:hover {
+  transform: translateY(-1px);
+  border-color: rgba(214, 90, 31, 0.4);
+  background: #fff4e6;
+}
+
+.chip-hot {
+  background: var(--accent-soft);
+  border-color: rgba(214, 90, 31, 0.35);
+  color: var(--accent-deep);
 }
 
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
@@ -165,5 +302,9 @@
 @media (max-width: 640px) {
   .paths {
     grid-template-columns: 1fr;
+  }
+
+  .path {
+    min-height: 0;
   }
 }

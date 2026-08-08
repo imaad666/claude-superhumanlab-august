@@ -1,4 +1,19 @@
 import { Link } from "react-router-dom";
+import { RotatingLabel } from "../components/RotatingLabel";
+
+const slpPhrases = [
+  "For young learners",
+  "Made for kids",
+  "Gentle first steps",
+  "Practice between therapy",
+];
+
+const guidePhrases = [
+  "Practice your voice",
+  "Read someone’s tone",
+  "Live speech feedback",
+  "Train anytime",
+];
 
 export function LandingPage() {
   return (
@@ -7,33 +22,53 @@ export function LandingPage() {
         <p className="eyebrow">Speech companion</p>
         <h1 className="brand">Speak &amp; See</h1>
         <p className="lede">
-          Practice and understand speech with a quiet, private feedback loop.
+          Learn to speak with confidence — practice, play, and get gentle
+          feedback anytime.
         </p>
       </header>
 
       <nav className="paths" aria-label="Choose a path">
-        <Link className="path" to="/slp">
-          <span className="path-kicker">Young learners</span>
+        <Link className="path path-slp" to="/slp">
           <span className="path-title">
             SLP — Speech-Language Pathology
           </span>
           <span className="path-desc">
-            Built for younger kids just starting out — encouraging practice that
-            complements therapist-led sessions between visits.
+            Friendly practice for younger kids just starting out — builds on
+            what they learn with a therapist.
           </span>
-          <span className="path-cta">Enter →</span>
+          <span className="path-footer">
+            <RotatingLabel phrases={slpPhrases} />
+            <span className="btn btn-accent btn-in-card">Let’s go →</span>
+          </span>
         </Link>
 
-        <Link className="path" to="/guide">
-          <span className="path-kicker">Live speech</span>
+        <Link className="path path-guide" to="/guide">
           <span className="path-title">Speech Guide</span>
           <span className="path-desc">
-            Practice your own speech, or read tone and emphasis when someone
-            else is speaking.
+            Practice your own voice, or watch someone else speak and see tone,
+            stress, and rhythm light up.
           </span>
-          <span className="path-cta">Enter →</span>
+          <span className="path-footer">
+            <RotatingLabel phrases={guidePhrases} />
+            <span className="btn btn-primary btn-in-card">Explore modes →</span>
+          </span>
         </Link>
       </nav>
+
+      <section className="fun-strip" aria-label="Quick starts">
+        <p className="fun-strip-label">Or jump straight in</p>
+        <div className="fun-strip-actions">
+          <Link className="chip" to="/guide/trainer">
+            Personal Trainer
+          </Link>
+          <Link className="chip chip-hot" to="/guide/live">
+            Live Guide
+          </Link>
+          <Link className="chip" to="/slp">
+            SLP for kids
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
