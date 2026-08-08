@@ -18,6 +18,8 @@ type BrainInput = {
   pitchHint: number;
   expression: ExpressionFeatures;
   coachTarget: string | null;
+  /** data-URL or raw base64 lip crop for vision model */
+  lipImage: string | null;
 };
 
 export function useBrain(input: BrainInput) {
@@ -26,10 +28,12 @@ export function useBrain(input: BrainInput) {
   const [ollama, setOllama] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const [waking, setWaking] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef(input);
   inputRef.current = input;
   const wokeRef = useRef(false);
+  const inFlight = useRef(false);
 
   const local = useMemo(() => {
     if (!input.enabled) return null;
@@ -55,9 +59,24 @@ export function useBrain(input: BrainInput) {
     input.coachTarget,
   ]);
 
-  // Prefer live Ollama when available; otherwise snappy local heuristic
-  const insight =
-    remote?.source === "ollama" ? remote : (local ?? remote);
+  // Live metrics always; vision coaching overlays when fresh
+  const insight = useMemo(() => {
+    if (!local) return remote;
+    if (!remote || remote.source !== "ollama") return local;
+    return {
+      ...local,
+      tone: remote.tone,
+      mood: remote.mood,
+      intention: remote.intention,
+      summary: remote.summary,
+      lipMatch: remote.lipMatch,
+      lipCue: remote.lipCue,
+      source: remote.source,
+      model: remote.model,
+      usedVision: remote.usedVision,
+      words: remote.words.length ? remote.words : local.words,
+    };
+  }, [local, remote]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +100,6 @@ export function useBrain(input: BrainInput) {
           setServerOk(false);
           setOllama(false);
           setModelReady(false);
-          setRemote(null);
         }
       }
     }
@@ -94,12 +112,28 @@ export function useBrain(input: BrainInput) {
     };
   }, []);
 
-  // On Start: wake Ollama + pull/warm model once
   useEffect(() => {
     if (!input.enabled || !serverOk || wokeRef.current) return;
     let cancelled = false;
 
     async function wake() {
+      // #region agent log
+      fetch("http://127.0.0.1:7904/ingest/a7463e60-1f4a-4b91-b6b8-9ad6b90b1214", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "21c060",
+        },
+        body: JSON.stringify({
+          sessionId: "21c060",
+          hypothesisId: "H4",
+          location: "useBrain.ts:wake",
+          message: "brain wake started",
+          data: { mode: inputRef.current.mode, enabled: inputRef.current.enabled },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       setWaking(true);
       try {
         const res = await fetch("/api/wake", { method: "POST" });
@@ -114,12 +148,10 @@ export function useBrain(input: BrainInput) {
         wokeRef.current = true;
         setOllama(Boolean(data.ollama));
         setModelReady(Boolean(data.model_ready && data.warm));
-        if (data.error && !data.ok) {
-          setError(data.error);
-        }
+        if (data.error && !data.ok) setError(data.error);
       } catch {
         if (!cancelled) {
-          setError("Could not wake model — using on-device brain");
+          setError("Could not wake vision model — live metrics still on");
         }
       } finally {
         if (!cancelled) setWaking(false);
@@ -133,9 +165,7 @@ export function useBrain(input: BrainInput) {
   }, [input.enabled, serverOk]);
 
   useEffect(() => {
-    if (!input.enabled) {
-      wokeRef.current = false;
-    }
+    if (!input.enabled) wokeRef.current = false;
   }, [input.enabled]);
 
   useEffect(() => {
@@ -144,7 +174,33 @@ export function useBrain(input: BrainInput) {
     let cancelled = false;
 
     async function analyze() {
+      if (inFlight.current) return;
       const current = inputRef.current;
+      // #region agent log
+      fetch("http://127.0.0.1:7904/ingest/a7463e60-1f4a-4b91-b6b8-9ad6b90b1214", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "21c060",
+        },
+        body: JSON.stringify({
+          sessionId: "21c060",
+          hypothesisId: "H1",
+          location: "useBrain.ts:analyze",
+          message: "analyze request",
+          data: {
+            mode: current.mode,
+            hasLipImage: Boolean(current.lipImage),
+            lipImageChars: current.lipImage?.length ?? 0,
+            openness: current.lips.openness,
+            volume: current.volume,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      inFlight.current = true;
+      setThinking(true);
       try {
         const res = await fetch("/api/analyze", {
           method: "POST",
@@ -171,6 +227,7 @@ export function useBrain(input: BrainInput) {
               mouth_funnel: current.expression.mouthFunnel,
             },
             coach_target: current.coachTarget,
+            lip_image: current.lipImage,
           }),
         });
         if (!res.ok) throw new Error(`Analyze failed (${res.status})`);
@@ -186,18 +243,22 @@ export function useBrain(input: BrainInput) {
           words: data.words ?? [],
           source: data.source,
           model: data.model,
+          usedVision: Boolean(data.used_vision),
         });
         setError(null);
       } catch (err) {
         if (!cancelled) {
-          setRemote(null);
           setError(err instanceof Error ? err.message : "Analyze failed");
         }
+      } finally {
+        inFlight.current = false;
+        if (!cancelled) setThinking(false);
       }
     }
 
     void analyze();
-    const timer = window.setInterval(analyze, 1600);
+    // Vision is slower — poll gently; heuristic UI stays live via `local`
+    const timer = window.setInterval(analyze, 2800);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -209,16 +270,20 @@ export function useBrain(input: BrainInput) {
     input.coachTarget,
     input.recentWords.length,
     modelReady,
+    // re-run when a new lip frame arrives (throttled by inFlight)
+    input.lipImage?.slice(0, 48),
   ]);
 
   return {
     insight,
+    live: local,
     status: (input.enabled ? "ready" : "idle") as "idle" | "ready" | "error",
     error,
     ollama,
     serverOk,
     modelReady,
     waking,
+    thinking,
     source: insight?.source ?? null,
   };
 }

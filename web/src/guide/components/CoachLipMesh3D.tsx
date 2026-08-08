@@ -1,48 +1,42 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { INNER_LIP, OUTER_LIP, lipMeshes3D, type Point } from "../lips";
 
-type LipMesh3DProps = {
-  landmarks: Point[] | null;
-  tracking: boolean;
-  /** When true, show coach demo (no camera) empty state copy */
-  demo?: boolean;
-  emptyHint?: string;
+type CoachLipMesh3DProps = {
+  openness: number;
+  width: number;
+  roundness: number;
 };
 
-const OUTER_N = OUTER_LIP.length;
-const INNER_N = INNER_LIP.length;
-/** Higher = snappier; lower = smoother / less jitter */
-const SMOOTH = 0.78;
+const OUTER_N = 24;
+const INNER_N = 20;
+const SMOOTH = 0.22;
 
 /**
- * Soft MediaPipe lip surface. No wireframe/dots; orientation screen-locked;
- * drag to orbit. Positions are exponentially smoothed for calm motion.
+ * Parametric 3D coach mouth for Watch phase.
+ * Does NOT use MediaPipe landmarks — builds a clean lip ribbon from
+ * openness / width / roundness so shapes stay readable.
  */
-export function LipMesh3D({
-  landmarks,
-  tracking,
-  demo = false,
-  emptyHint,
-}: LipMesh3DProps) {
+export function CoachLipMesh3D({
+  openness,
+  width,
+  roundness,
+}: CoachLipMesh3DProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const landmarksRef = useRef(landmarks);
-  const trackingRef = useRef(tracking);
-  landmarksRef.current = landmarks;
-  trackingRef.current = tracking;
+  const shapeRef = useRef({ openness, width, roundness });
+  shapeRef.current = { openness, width, roundness };
 
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
-    const width = mount.clientWidth || 280;
-    const height = mount.clientHeight || 220;
+    const widthPx = mount.clientWidth || 280;
+    const heightPx = mount.clientHeight || 220;
 
     const scene = new THREE.Scene();
     scene.background = null;
 
-    const camera = new THREE.PerspectiveCamera(40, width / height, 0.01, 40);
-    camera.position.set(0, 0, 1.55);
+    const camera = new THREE.PerspectiveCamera(40, widthPx / heightPx, 0.01, 40);
+    camera.position.set(0, 0.02, 1.65);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -51,22 +45,24 @@ export function LipMesh3D({
     });
     renderer.setClearColor(0x000000, 0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(width, height);
+    renderer.setSize(widthPx, heightPx);
     mount.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xfff0e0, 1.15);
-    const key = new THREE.DirectionalLight(0xffe8d4, 0.95);
-    key.position.set(0.5, 0.7, 1.5);
-    const fill = new THREE.DirectionalLight(0xd4a574, 0.28);
-    fill.position.set(-0.7, -0.15, 0.5);
-    scene.add(ambient, key, fill);
+    const ambient = new THREE.AmbientLight(0xfff0e0, 1.2);
+    const key = new THREE.DirectionalLight(0xffe8d4, 1.0);
+    key.position.set(0.45, 0.8, 1.4);
+    const fill = new THREE.DirectionalLight(0xd4a574, 0.32);
+    fill.position.set(-0.8, -0.2, 0.6);
+    const rim = new THREE.DirectionalLight(0xffc9a8, 0.22);
+    rim.position.set(0, 0.2, -1.2);
+    scene.add(ambient, key, fill, rim);
 
     const lipMat = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#c24a38"),
       emissive: new THREE.Color("#4a1812"),
-      emissiveIntensity: 0.12,
-      roughness: 0.62,
-      metalness: 0.02,
+      emissiveIntensity: 0.14,
+      roughness: 0.55,
+      metalness: 0.03,
       side: THREE.DoubleSide,
       flatShading: false,
     });
@@ -75,7 +71,7 @@ export function LipMesh3D({
       roughness: 1,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.92,
+      opacity: 0.94,
     });
 
     const ribbonGeo = new THREE.BufferGeometry();
@@ -110,8 +106,8 @@ export function LipMesh3D({
     let dragging = false;
     let prevX = 0;
     let prevY = 0;
-    let rotY = 0;
-    let rotX = 0;
+    let rotY = 0.15;
+    let rotX = -0.08;
     let seeded = false;
 
     const onPointerDown = (e: PointerEvent) => {
@@ -136,49 +132,105 @@ export function LipMesh3D({
       prevY = e.clientY;
       rotY += dx * 0.012;
       rotX += dy * 0.01;
-      rotY = Math.max(-1.1, Math.min(1.1, rotY));
-      rotX = Math.max(-0.55, Math.min(0.55, rotX));
+      rotY = Math.max(-1.0, Math.min(1.0, rotY));
+      rotX = Math.max(-0.5, Math.min(0.45, rotX));
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointerup", onPointerUp);
     mount.addEventListener("pointermove", onPointerMove);
+    mount.addEventListener("pointerleave", onPointerUp);
 
-    const lerpBuf = (cur: Float32Array, target: Float32Array, t: number) => {
-      let maxDelta = 0;
-      for (let i = 0; i < cur.length; i += 1) {
-        maxDelta = Math.max(maxDelta, Math.abs(target[i] - cur[i]));
-      }
-      const alpha = Math.min(1, t + maxDelta * 2.5);
+    const lerpBuf = (cur: Float32Array, target: Float32Array, alpha: number) => {
       for (let i = 0; i < cur.length; i += 1) {
         cur[i] += (target[i] - cur[i]) * alpha;
       }
     };
 
-    const setTargetFromLandmarks = (lms: Point[]) => {
-      const mesh = lipMeshes3D(lms, true);
-      if (!mesh) return;
-      const { outer, inner } = mesh;
-      if (outer.length < 9 || inner.length < 9) return;
+    /** Build lip curves in local 3D space (already camera-facing units). */
+    const writeShape = (
+      o: number,
+      w: number,
+      r: number,
+      outOuter: Float32Array,
+      outInner: Float32Array,
+    ) => {
+      const open = Math.min(1, Math.max(0, o));
+      const wide = Math.min(1, Math.max(0, w));
+      const round = Math.min(1, Math.max(0, r));
 
-      ribbonTarget.set(outer);
-      ribbonTarget.set(inner, outer.length);
+      // Base mouth size in scene units
+      const rx = 0.28 + wide * 0.32 - round * 0.08;
+      const upperRy = 0.04 + open * 0.22;
+      const lowerRy = 0.05 + open * 0.28;
+      // Round vowels push lips forward and make opening more circular
+      const zPush = 0.02 + round * 0.16;
+      const circleBlend = round * 0.55;
+
+      const ring = (
+        n: number,
+        scaleX: number,
+        upY: number,
+        loY: number,
+        zBase: number,
+        dest: Float32Array,
+      ) => {
+        for (let i = 0; i < n; i += 1) {
+          const u = i / n;
+          // Left → upper → right → lower (readable lip loop)
+          const a = Math.PI - u * Math.PI * 2;
+          const x = Math.cos(a) * scaleX;
+          const s = Math.sin(a);
+          const ey = s >= 0 ? s * upY : s * loY;
+          const circY = s * ((upY + loY) * 0.5);
+          const y = ey * (1 - circleBlend) + circY * circleBlend;
+          const bow =
+            s > 0.2 ? -0.018 * (1 - round) * Math.pow(Math.cos(a), 2) : 0;
+          const z =
+            zBase +
+            zPush * (0.35 + 0.65 * (1 - Math.abs(x) / Math.max(scaleX, 0.01))) -
+            Math.abs(s) * 0.01;
+
+          dest[i * 3] = x;
+          dest[i * 3 + 1] = y + bow;
+          dest[i * 3 + 2] = z;
+        }
+      };
+
+      ring(OUTER_N, rx, upperRy, lowerRy, 0.02, outOuter);
+      ring(
+        INNER_N,
+        rx * (0.55 + open * 0.12),
+        upperRy * 0.62,
+        lowerRy * 0.62,
+        -0.01,
+        outInner,
+      );
+    };
+
+    const outerBuf = new Float32Array(OUTER_N * 3);
+    const innerBuf = new Float32Array(INNER_N * 3);
+
+    const applyTarget = () => {
+      const { openness: o, width: w, roundness: rd } = shapeRef.current;
+      writeShape(o, w, rd, outerBuf, innerBuf);
+      ribbonTarget.set(outerBuf);
+      ribbonTarget.set(innerBuf, OUTER_N * 3);
 
       let cx = 0;
       let cy = 0;
       let cz = 0;
-      const n = inner.length / 3;
-      for (let i = 0; i < n; i += 1) {
-        cx += inner[i * 3];
-        cy += inner[i * 3 + 1];
-        cz += inner[i * 3 + 2];
+      for (let i = 0; i < INNER_N; i += 1) {
+        cx += innerBuf[i * 3];
+        cy += innerBuf[i * 3 + 1];
+        cz += innerBuf[i * 3 + 2];
       }
-      cx /= n;
-      cy /= n;
-      cz /= n;
+      cx /= INNER_N;
+      cy /= INNER_N;
+      cz /= INNER_N;
       cavityTarget[0] = cx;
       cavityTarget[1] = cy;
-      cavityTarget[2] = cz - 0.015;
-      cavityTarget.set(inner, 3);
+      cavityTarget[2] = cz - 0.02;
+      cavityTarget.set(innerBuf, 3);
 
       if (!seeded) {
         ribbonPos.set(ribbonTarget);
@@ -202,18 +254,13 @@ export function LipMesh3D({
       group.rotation.y = rotY;
       group.rotation.x = rotX;
 
-      const lms = landmarksRef.current;
-      if (trackingRef.current && lms?.length) {
-        setTargetFromLandmarks(lms);
-        if (seeded) {
-          lerpBuf(ribbonPos, ribbonTarget, SMOOTH);
-          lerpBuf(cavityPos, cavityTarget, SMOOTH);
-          ribbonGeo.attributes.position.needsUpdate = true;
-          cavityGeo.attributes.position.needsUpdate = true;
-          ribbonGeo.computeVertexNormals();
-          cavityGeo.computeVertexNormals();
-        }
-      }
+      applyTarget();
+      lerpBuf(ribbonPos, ribbonTarget, SMOOTH);
+      lerpBuf(cavityPos, cavityTarget, SMOOTH);
+      ribbonGeo.attributes.position.needsUpdate = true;
+      cavityGeo.attributes.position.needsUpdate = true;
+      ribbonGeo.computeVertexNormals();
+      cavityGeo.computeVertexNormals();
 
       renderer.render(scene, camera);
       raf = requestAnimationFrame(tick);
@@ -226,6 +273,7 @@ export function LipMesh3D({
       mount.removeEventListener("pointerdown", onPointerDown);
       mount.removeEventListener("pointerup", onPointerUp);
       mount.removeEventListener("pointermove", onPointerMove);
+      mount.removeEventListener("pointerleave", onPointerUp);
       ribbonGeo.dispose();
       cavityGeo.dispose();
       lipMat.dispose();
@@ -237,14 +285,5 @@ export function LipMesh3D({
     };
   }, []);
 
-  const showEmpty = !tracking;
-  const hint =
-    emptyHint ??
-    (demo ? "Watch the mouth shapes" : "Press Start");
-
-  return (
-    <div className="lip-mesh3d" ref={mountRef}>
-      {showEmpty && <p className="lip-mesh3d-empty">{hint}</p>}
-    </div>
-  );
+  return <div className="lip-mesh3d" ref={mountRef} />;
 }

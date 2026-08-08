@@ -105,6 +105,32 @@ export function useFaceLandmarker(
         }
 
         frameRef.current += 1;
+        if (frameRef.current % 30 === 0) {
+          // #region agent log
+          fetch(
+            "http://127.0.0.1:7904/ingest/a7463e60-1f4a-4b91-b6b8-9ad6b90b1214",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Debug-Session-Id": "21c060",
+              },
+              body: JSON.stringify({
+                sessionId: "21c060",
+                hypothesisId: "H3",
+                location: "useFaceLandmarker.ts:tick",
+                message: "face landmarker running",
+                data: {
+                  enabled,
+                  frames: frameRef.current,
+                  hasFace: Boolean(result?.faceLandmarks?.[0]),
+                },
+                timestamp: Date.now(),
+              }),
+            },
+          ).catch(() => {});
+          // #endregion
+        }
         if (frameRef.current % 2 === 0) {
           const face = result?.faceLandmarks?.[0];
           const categories = result?.faceBlendshapes?.[0]?.categories ?? null;

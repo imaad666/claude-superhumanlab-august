@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODEL="${OLLAMA_MODEL:-qwen2.5:0.5b}"
+MODEL="${OLLAMA_MODEL:-gemma3:4b}"
 BRAIN_PORT="${BRAIN_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 
@@ -43,7 +43,7 @@ if ! curl -sf "http://127.0.0.1:11434/api/tags" >/dev/null 2>&1; then
   echo "Ollama did not start. Install from https://ollama.com/download and retry."
   echo "Heuristic brain will still work."
 else
-  log "Ensuring model $MODEL (~400MB Q4)…"
+  log "Ensuring vision model $MODEL (~3.3GB)…"
   ollama pull "$MODEL"
 fi
 

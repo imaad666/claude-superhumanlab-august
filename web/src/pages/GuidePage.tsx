@@ -20,8 +20,8 @@ export function GuidePage() {
         <Link className="path" to="/guide/trainer">
           <span className="path-title">Personal Trainer</span>
           <span className="path-desc">
-            Face the camera. Speak. Get encouraging, word-by-word feedback on
-            pronunciation, tone, and stress.
+            Watch mouth shapes for a word or sentence, then recreate them —
+            plus free practice with live coaching.
           </span>
           <span className="btn btn-accent btn-in-card">Start practice →</span>
         </Link>
@@ -29,10 +29,10 @@ export function GuidePage() {
         <Link className="path" to="/guide/live">
           <span className="path-title">Live Guide</span>
           <span className="path-desc">
-            Point the camera at a teacher or friend — see tone, emphasis, and
-            speech patterns in real time.
+            Point the camera at a teacher or friend, record the moment, then
+            review tone, emphasis, and speech patterns after.
           </span>
-          <span className="btn btn-primary btn-in-card">Start live →</span>
+          <span className="btn btn-primary btn-in-card">Record a session →</span>
         </Link>
       </nav>
     </main>

@@ -264,6 +264,52 @@
   gap: 6px;
 }
 
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+
+.metric-meter {
+  display: grid;
+  grid-template-columns: 42px 1fr 28px;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-meter-label {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.metric-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(42, 31, 22, 0.08);
+  overflow: hidden;
+}
+
+.metric-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hot));
+  transition: width 80ms linear;
+}
+
+.metric-meter-val {
+  text-align: right;
+  color: var(--ink-secondary);
+}
+
+.insight-chip-vision {
+  background: rgba(42, 31, 22, 0.08);
+  color: var(--ink-secondary);
+}
+
 .insight-chip {
   display: inline-flex;
   align-items: center;
@@ -564,4 +610,343 @@
   .coach-body {
     grid-template-columns: 1fr;
   }
+}
+
+
+/* Live Guide — record / review */
+.guide-rec-badge {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(180, 40, 30, 0.88);
+  color: #fff8f1;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.session-panel {
+  flex: 1.25;
+  min-height: 0;
+}
+
+.session-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.session-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-playback {
+  display: block;
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #2a1f16;
+}
+
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.session-segments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.session-segment {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--ink-secondary);
+}
+
+.session-segment-t {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink-tertiary);
+  min-width: 2.6rem;
+}
+
+.session-segment-mood {
+  text-transform: capitalize;
+}
+
+
+/* Personal Trainer — mode chips + lesson UI */
+.trainer-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.trainer-mode-chip {
+  appearance: none;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(255, 246, 234, 0.7);
+  color: var(--ink-secondary);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trainer-mode-chip:hover {
+  border-color: rgba(214, 90, 31, 0.4);
+  color: var(--ink);
+}
+
+.trainer-mode-chip.is-active {
+  background: linear-gradient(135deg, var(--accent-hot), var(--accent));
+  border-color: transparent;
+  color: #fff8f1;
+}
+
+.lesson-picker,
+.lesson-player {
+  min-height: 0;
+  height: 100%;
+}
+
+.lesson-picker-body,
+.lesson-player-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+}
+
+.lesson-bank {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lesson-bank-chip {
+  appearance: none;
+  border: 1.5px solid var(--line-strong);
+  background: rgba(255, 246, 234, 0.85);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lesson-bank-chip:hover:not(:disabled) {
+  border-color: rgba(214, 90, 31, 0.45);
+  transform: translateY(-1px);
+}
+
+.lesson-bank-chip:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.lesson-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.lesson-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(255, 246, 234, 0.9);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.lesson-input:focus {
+  outline: 2px solid rgba(214, 90, 31, 0.35);
+  outline-offset: 1px;
+}
+
+.lesson-error {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.lesson-speak {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.lesson-syll {
+  color: var(--ink-tertiary);
+}
+
+.lesson-syll.is-active {
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 0 3px;
+}
+
+.lesson-step-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 246, 234, 0.55);
+}
+
+.lesson-step-label {
+  margin: 0 0 4px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.95rem;
+}
+
+.lesson-step-speak {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.lesson-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lesson-score-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lesson-score-row {
+  display: grid;
+  grid-template-columns: 48px auto 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.lesson-score-syll {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lesson-score-cue {
+  color: var(--ink-secondary);
+}
+
+.lesson-speak-line {
+  margin-top: auto;
+}
+
+@media (max-width: 980px) {
+  .guide-topbar-left {
+    flex-wrap: wrap;
+  }
+
+  .trainer-modes {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+
+.viseme-demo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px;
+}
+
+.viseme-demo-svg {
+  width: min(100%, 280px);
+  height: auto;
+  max-height: 100%;
+  flex: 1;
+  min-height: 120px;
+  transition: opacity 160ms ease;
+}
+
+.viseme-demo-outer,
+.viseme-demo-opening {
+  transition: d 280ms ease;
+}
+
+.viseme-demo-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.viseme-demo-caption span {
+  color: var(--accent-deep);
+  font-weight: 700;
+}
+
+.viseme-demo-ipa {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--ink-tertiary) !important;
+  font-weight: 600 !important;
+  font-size: 0.78rem;
+}
+
+
+.coach-metrics-ipa {
+  color: var(--ink-tertiary);
+  font-weight: 600;
 }

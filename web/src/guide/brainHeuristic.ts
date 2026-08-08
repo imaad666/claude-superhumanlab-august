@@ -11,6 +11,7 @@ export type BrainInsight = {
   words: { text: string; tone: ToneKind; tip?: string | null }[];
   source: "ollama" | "heuristic";
   model: string | null;
+  usedVision?: boolean;
 };
 
 type HeuristicInput = {
@@ -157,5 +158,6 @@ export function analyzeHeuristic(input: HeuristicInput): BrainInsight {
     words,
     source: "heuristic",
     model: null,
+    usedVision: false,
   };
 }

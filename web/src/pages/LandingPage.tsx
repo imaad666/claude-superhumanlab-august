@@ -11,7 +11,7 @@ const slpPhrases = [
 const guidePhrases = [
   "Practice your voice",
   "Read someone’s tone",
-  "Live speech feedback",
+  "Record, then review",
   "Train anytime",
 ];
 

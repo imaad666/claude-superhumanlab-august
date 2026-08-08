@@ -2,51 +2,52 @@
 
 Speech companion for Deaf/HoH users — Superhuman Lab hackathon.
 
-## One command (recommended)
+## One command
 
 ```bash
 npm run dev
 ```
 
-This wakes **Ollama + `qwen2.5:0.5b`** (~398MB quantized), the FastAPI brain on `:8000`, and Vite on `:5173`.
+Wakes **Ollama + `gemma3:4b`** (vision, ~3.3GB), FastAPI brain `:8000`, Vite `:5173`.
 
-Open http://127.0.0.1:5173 — press **Start** and the UI also hits `/api/wake` so the model is warm.
+Open http://127.0.0.1:5173 → **Start**. Live meters update instantly; vision coaching refreshes every ~2–3s with the lip crop + all metrics.
 
-## Model choice (space-tight)
+## Brain design (speed + accuracy)
 
-| Model | Disk | Why |
-|-------|------|-----|
-| **`qwen2.5:0.5b`** (default) | ~398MB | Best tiny structured-JSON coach; Q4 quant |
-| `qwen2.5:1.5b` | ~986MB | Clearer tips if you can spare ~1GB |
-| `gemma2:2b` | ~1.6GB | Fine, but heavier for this task |
+| Layer | What | Latency |
+|-------|------|---------|
+| MediaPipe + audio | open / wide / round / vol / pitch / smile / jaw | frame-rate |
+| Heuristic | instant tone / mood / lip tip | &lt;1ms |
+| **Gemma 3 4B vision** | lip-crop JPEG + metrics → coaching JSON | ~1–3s |
 
-Override anytime:
+UI never waits on the model — meters stay live; summary/cue soft-update when vision returns.
+
+## Model
+
+| Model | Disk | Role |
+|-------|------|------|
+| **`gemma3:4b`** (default) | ~3.3GB | Vision + metrics under 5GB |
+| `moondream` | ~1.7GB | Smaller / faster vision fallback |
+| `qwen2.5:0.5b` | ~0.4GB | Text-only (no vision) |
 
 ```bash
-OLLAMA_MODEL=qwen2.5:1.5b npm run dev
+OLLAMA_MODEL=gemma3:4b npm run wake
 ```
-
-## Manual (two terminals)
-
-```bash
-# Brain
-cd server && source .venv/bin/activate
-OLLAMA_MODEL=qwen2.5:0.5b uvicorn main:app --port 8000
-
-# Web
-cd web && npm run dev
-```
-
-Health: http://127.0.0.1:8000/health · Wake: `npm run wake`
 
 ## Architecture
 
-| Signal | Source | Job |
-|--------|--------|-----|
-| Lips | MediaPipe Face Landmarker | Shape match |
-| Expression | MediaPipe blendshapes | Mood factor |
-| Pitch / energy | Web Audio | Tone factor |
-| Words | Web Speech API | Transcript |
-| Brain | Heuristic (instant) → Qwen via Ollama | Tone, mood, intention, lip cues |
+Camera → MediaPipe lips + blendshapes  
+Mic → volume / pitch / spectrogram  
+STT → transcript  
+Lip crop JPEG + all metrics → local Gemma vision  
+→ tone, mood, intention, lip match, encouraging cue
 
-Heuristic is the snappy always-on layer. Qwen refines when Ollama is awake.
+## Live Guide
+
+Record a teacher/friend speaking (camera + mic + lip samples). **Gemma runs after you stop** — not continuously live — then review tone / mood / intention across the clip.
+
+## Personal Trainer
+
+- **Free practice** — live meters + vision coaching (unchanged).
+- **Learn a word / Learn a sentence** — pick from a starter bank or type your own. Watch animated lip steps (`dog` → `dh · oww · ghh`), then recreate. Scoring is encouraging and points at what to adjust.
+

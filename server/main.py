@@ -1,10 +1,8 @@
 """
 Local speech-companion brain.
 
-Pipeline:
-  MediaPipe lips + blendshapes + spectrogram features + transcript
-    → heuristic fusion (always-on, snappy)
-    → optional Ollama Qwen refinement when model is awake
+Fast path: MediaPipe + audio metrics → heuristic (always instant)
+Vision path: lip-crop JPEG + same metrics → Gemma 3 4B (Ollama)
 
 No cloud. No Claude.
 """
@@ -22,10 +20,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-# ~398MB Q4 quant — strong at structured JSON, tiny on disk
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+# Multimodal ~3.3GB — metrics + lip-crop vision
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
-app = FastAPI(title="Speak & See Brain", version="0.2.0")
+app = FastAPI(title="Speak & See Brain", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -69,6 +67,8 @@ class AnalyzeRequest(BaseModel):
     audio: AudioFeatures = Field(default_factory=AudioFeatures)
     expression: ExpressionFeatures = Field(default_factory=ExpressionFeatures)
     coach_target: str | None = None
+    # Optional JPEG/PNG base64 (raw or data-URL) of mouth crop
+    lip_image: str | None = None
 
 
 class WordInsight(BaseModel):
@@ -87,6 +87,17 @@ class AnalyzeResponse(BaseModel):
     words: list[WordInsight] = Field(default_factory=list)
     source: Literal["ollama", "heuristic"]
     model: str | None = None
+    used_vision: bool = False
+
+
+def _strip_b64(image: str | None) -> str | None:
+    if not image:
+        return None
+    raw = image.strip()
+    if "," in raw and raw.lower().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    raw = raw.strip()
+    return raw or None
 
 
 def _heuristic(req: AnalyzeRequest) -> AnalyzeResponse:
@@ -167,6 +178,7 @@ def _heuristic(req: AnalyzeRequest) -> AnalyzeResponse:
         words=words,
         source="heuristic",
         model=None,
+        used_vision=False,
     )
 
 
@@ -221,12 +233,22 @@ async def _ollama_tags() -> tuple[bool, list[str]]:
 
 
 def _model_present(models: list[str], name: str) -> bool:
-    base = name.split(":")[0]
-    return any(m == name or m.startswith(f"{name}") or m.startswith(f"{base}:") for m in models)
+    target = name.lower()
+    base = target.split(":")[0]
+    for m in models:
+        ml = m.lower()
+        if ml == target or ml.startswith(f"{target}-") or ml.startswith(f"{target}:"):
+            return True
+        if ":" in target and ml.startswith(base + ":"):
+            # gemma3:4b matches gemma3:4b-it-q4_k_m etc.
+            tag = target.split(":", 1)[1]
+            if tag and tag in ml:
+                return True
+    return any(base == m.lower().split(":")[0] and target in m.lower() for m in models)
 
 
 async def _ollama_pull(model: str) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=600.0) as client:
+    async with httpx.AsyncClient(timeout=900.0) as client:
         res = await client.post(f"{OLLAMA_URL}/api/pull", json={"name": model, "stream": False})
         res.raise_for_status()
         return res.json() if res.content else {"status": "ok"}
@@ -237,78 +259,20 @@ async def _ollama_warmup(model: str) -> bool:
         "model": model,
         "stream": False,
         "format": "json",
-        "options": {"temperature": 0.1, "num_predict": 40},
+        "keep_alive": "30m",
+        "options": {"temperature": 0.1, "num_predict": 24},
         "messages": [
-            {
-                "role": "system",
-                "content": "Return JSON only: {\"ok\":true}",
-            },
+            {"role": "system", "content": 'Return JSON only: {"ok":true}'},
             {"role": "user", "content": "ping"},
         ],
     }
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
             res.raise_for_status()
             return True
     except Exception:
         return False
-
-
-async def _ollama_refine(req: AnalyzeRequest, base: AnalyzeResponse) -> AnalyzeResponse | None:
-    prompt = f"""You help Deaf/hard-of-hearing users understand speech tone and practice lip shapes.
-Be encouraging, never harsh. Return ONLY valid JSON with keys:
-tone (calm|warm|bright|soft), mood (encouraging|curious|serious|playful|tired|neutral),
-intention (greeting|asking|explaining|practicing|emphasizing|unknown),
-summary (one short sentence), lip_match (good|close|try_again), lip_cue (one short tip).
-
-Signals:
-mode={req.mode}
-transcript={req.transcript!r}
-recent_words={req.recent_words[-8:]}
-lips={req.lips.model_dump()}
-audio={req.audio.model_dump()}
-expression={req.expression.model_dump()}
-coach_target={req.coach_target}
-heuristic={base.model_dump(exclude={"words", "source", "model"})}
-"""
-
-    payload = {
-        "model": OLLAMA_MODEL,
-        "stream": False,
-        "format": "json",
-        "options": {"temperature": 0.2, "num_predict": 180},
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are Speak & See local brain. Output JSON only.",
-            },
-            {"role": "user", "content": prompt},
-        ],
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
-            res.raise_for_status()
-            data = res.json()
-            content = data.get("message", {}).get("content", "")
-            parsed = _extract_json(content)
-            if not parsed:
-                return None
-            return AnalyzeResponse(
-                tone=parsed.get("tone", base.tone),
-                mood=parsed.get("mood", base.mood),
-                intention=parsed.get("intention", base.intention),
-                summary=parsed.get("summary", base.summary),
-                lip_match=parsed.get("lip_match", base.lip_match),
-                lip_cue=parsed.get("lip_cue", base.lip_cue),
-                words=base.words,
-                source="ollama",
-                model=OLLAMA_MODEL,
-            )
-    except Exception:
-        return None
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -325,6 +289,341 @@ def _extract_json(text: str) -> dict[str, Any] | None:
             return None
 
 
+def _norm_tone(value: Any, fallback: Tone) -> Tone:
+    raw = str(value or "").strip().lower()
+    aliases = {
+        "calm": "calm",
+        "steady": "calm",
+        "neutral": "calm",
+        "warm": "warm",
+        "friendly": "warm",
+        "bright": "bright",
+        "emphasis": "bright",
+        "emphatic": "bright",
+        "excited": "bright",
+        "soft": "soft",
+        "gentle": "soft",
+        "quiet": "soft",
+    }
+    return aliases.get(raw, fallback)  # type: ignore[return-value]
+
+
+def _norm_mood(value: Any, fallback: Mood) -> Mood:
+    raw = str(value or "").strip().lower()
+    allowed = {
+        "encouraging",
+        "curious",
+        "serious",
+        "playful",
+        "tired",
+        "neutral",
+        "calm",
+    }
+    if raw == "calm":
+        return "neutral"
+    return raw if raw in allowed else fallback  # type: ignore[return-value]
+
+
+def _norm_intention(value: Any, fallback: Intention) -> Intention:
+    raw = str(value or "").strip().lower()
+    # model sometimes returns a sentence
+    if "ask" in raw or "?" in raw:
+        return "asking"
+    if "greet" in raw or "hello" in raw:
+        return "greeting"
+    if "emphas" in raw:
+        return "emphasizing"
+    if "explain" in raw:
+        return "explaining"
+    if "practic" in raw:
+        return "practicing"
+    allowed = {
+        "greeting",
+        "asking",
+        "explaining",
+        "practicing",
+        "emphasizing",
+        "unknown",
+    }
+    return raw if raw in allowed else fallback  # type: ignore[return-value]
+
+
+def _norm_match(value: Any, fallback: Match) -> Match:
+    if isinstance(value, (int, float)):
+        if value >= 0.7:
+            return "good"
+        if value >= 0.4:
+            return "close"
+        return "try_again"
+    raw = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+    if raw in {"good", "close", "try_again"}:
+        return raw  # type: ignore[return-value]
+    if "good" in raw or "great" in raw or "perfect" in raw:
+        return "good"
+    if "close" in raw or "almost" in raw:
+        return "close"
+    if "try" in raw or "again" in raw or "need" in raw:
+        return "try_again"
+    return fallback
+
+
+def _norm_cue(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    # collapse to one short line
+    text = re.sub(r"\s+", " ", text)
+    return text[:160] or fallback
+
+
+def _norm_summary(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    text = re.sub(r"\s+", " ", text)
+    return text[:220] or fallback
+
+
+async def _ollama_refine(req: AnalyzeRequest, base: AnalyzeResponse) -> AnalyzeResponse | None:
+    image = _strip_b64(req.lip_image)
+    has_vision = bool(image)
+
+    prompt = f"""You are Speak & See — a local coach for Deaf/hard-of-hearing speech practice.
+Be encouraging, never harsh. Use BOTH the metrics AND the mouth photo (if present).
+Return ONLY valid JSON with EXACT enum strings:
+tone: calm|warm|bright|soft
+mood: encouraging|curious|serious|playful|tired|neutral
+intention: greeting|asking|explaining|practicing|emphasizing|unknown
+lip_match: good|close|try_again
+summary: one short sentence
+lip_cue: one short tip about mouth shape
+
+mode={req.mode}
+target_shape={req.coach_target or req.lips.viseme_guess}
+transcript={req.transcript!r}
+recent_words={req.recent_words[-8:]}
+lips={req.lips.model_dump()}
+audio={req.audio.model_dump()}
+expression={req.expression.model_dump()}
+heuristic_guess={base.model_dump(exclude={"words", "source", "model", "used_vision"})}
+has_mouth_photo={has_vision}
+"""
+
+    user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if image:
+        user_msg["images"] = [image]
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0.1,
+            "num_predict": 140,
+        },
+        "messages": [
+            {
+                "role": "system",
+                "content": "Speak & See vision brain. Output JSON only with exact enums. Prefer mouth photo when it conflicts with metrics.",
+            },
+            user_msg,
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=18.0) as client:
+            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            res.raise_for_status()
+            data = res.json()
+            content = data.get("message", {}).get("content", "")
+            parsed = _extract_json(content)
+            if not parsed:
+                return None
+            return AnalyzeResponse(
+                tone=_norm_tone(parsed.get("tone"), base.tone),
+                mood=_norm_mood(parsed.get("mood"), base.mood),
+                intention=_norm_intention(parsed.get("intention"), base.intention),
+                summary=_norm_summary(parsed.get("summary"), base.summary),
+                lip_match=_norm_match(parsed.get("lip_match"), base.lip_match),
+                lip_cue=_norm_cue(parsed.get("lip_cue"), base.lip_cue),
+                words=base.words,
+                source="ollama",
+                model=OLLAMA_MODEL,
+                used_vision=has_vision,
+            )
+    except Exception:
+        return None
+
+
+
+class LessonRequest(BaseModel):
+    text: str = ""
+    kind: Literal["word", "sentence"] = "word"
+
+
+class LessonStepOut(BaseModel):
+    label: str
+    speak_as: str
+    viseme: str
+    cue: str
+    hold_ms: int = 650
+
+
+class LessonResponse(BaseModel):
+    text: str
+    kind: Literal["word", "sentence"]
+    tip: str
+    steps: list[LessonStepOut]
+    source: Literal["ollama", "heuristic"]
+    model: str | None = None
+
+
+_VISEME_OK = {"rest", "A", "E", "I", "O", "U", "M", "F", "L"}
+
+
+def _norm_viseme(value: Any, fallback: str = "A") -> str:
+    raw = str(value or "").strip().upper().replace(" ", "")
+    aliases = {
+        "AH": "A", "AA": "A", "EH": "E", "EE": "I", "IH": "I",
+        "OH": "O", "OO": "U", "UH": "A", "MM": "M", "B": "M", "P": "M",
+        "FF": "F", "V": "F", "LL": "L", "N": "L", "D": "L", "T": "L",
+    }
+    if raw in _VISEME_OK:
+        return raw
+    if raw in aliases:
+        return aliases[raw]
+    if raw[:1] in _VISEME_OK:
+        return raw[:1]
+    return fallback
+
+
+def _heuristic_lesson(text: str, kind: Literal["word", "sentence"]) -> LessonResponse:
+    clean = " ".join(text.strip().split())
+    steps: list[LessonStepOut] = []
+    digraphs = [
+        ("oo", "oo", "U"), ("ee", "ee", "I"), ("th", "th", "F"),
+        ("ch", "ch", "I"), ("sh", "sh", "U"), ("ow", "oww", "O"),
+        ("ou", "ow", "O"), ("ay", "ay", "E"), ("ai", "ay", "E"),
+        ("oa", "oh", "O"), ("ph", "ff", "F"), ("ng", "ng", "A"),
+    ]
+    letter_map = {
+        "a": ("ah", "A"), "e": ("eh", "E"), "i": ("ee", "I"),
+        "o": ("oh", "O"), "u": ("oo", "U"), "y": ("ee", "I"),
+        "m": ("mm", "M"), "b": ("b", "M"), "p": ("p", "M"),
+        "f": ("ff", "F"), "v": ("vv", "F"), "l": ("ll", "L"),
+        "n": ("nn", "L"), "d": ("dh", "L"), "t": ("t", "L"),
+        "w": ("w", "U"), "r": ("rr", "E"), "s": ("ss", "I"),
+        "z": ("zz", "I"), "g": ("ghh", "A"), "k": ("k", "A"),
+        "h": ("h", "A"), "c": ("k", "A"), "j": ("j", "A"),
+        "q": ("k", "A"), "x": ("ks", "I"),
+    }
+    cues = {
+        "A": "Open jaw", "E": "Wide smile", "I": "Wide + flat",
+        "O": "Round lips", "U": "Tight round", "M": "Lips together",
+        "F": "Teeth on lip", "L": "Tongue tip up", "rest": "Soft closed",
+    }
+    for word in clean.lower().split():
+        w = "".join(ch for ch in word if ch.isalpha())
+        i = 0
+        while i < len(w):
+            matched = False
+            for dig, speak, vis in digraphs:
+                if w[i:i + len(dig)] == dig:
+                    steps.append(LessonStepOut(
+                        label=dig.upper(), speak_as=speak, viseme=vis,
+                        cue=cues.get(vis, "Match the coach"), hold_ms=600 if kind == "sentence" else 650,
+                    ))
+                    i += len(dig)
+                    matched = True
+                    break
+            if matched:
+                continue
+            ch = w[i]
+            speak, vis = letter_map.get(ch, (ch, "A"))
+            steps.append(LessonStepOut(
+                label=ch.upper(), speak_as=speak, viseme=vis,
+                cue=cues.get(vis, "Match the coach"), hold_ms=600 if kind == "sentence" else 650,
+            ))
+            i += 1
+    if not steps:
+        steps = [LessonStepOut(label="AH", speak_as="ah", viseme="A", cue="Open jaw", hold_ms=700)]
+    return LessonResponse(
+        text=clean,
+        kind=kind,
+        tip="Watch each mouth shape, then copy it — slow is okay.",
+        steps=steps[:16],
+        source="heuristic",
+        model=None,
+    )
+
+
+async def _ollama_lesson(text: str, kind: Literal["word", "sentence"]) -> LessonResponse | None:
+    prompt = f"""You build a Deaf/HoH speech practice lesson.
+Break the {kind} into mouth-shape steps a learner can WATCH then RECREATE.
+Return ONLY JSON:
+{{
+  "tip": "one short encouraging tip",
+  "steps": [
+    {{"label":"D","speak_as":"dh","viseme":"L","cue":"Tongue tip up","hold_ms":650}}
+  ]
+}}
+Rules:
+- viseme MUST be one of: A,E,I,O,U,M,F,L,rest
+- speak_as is how to mouth it (e.g. oww, ghh) — max 8 chars
+- 2 to 10 steps for a word, up to 14 for a sentence
+- Be encouraging; no harsh language
+text={text!r}
+kind={kind}
+"""
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {"temperature": 0.2, "num_predict": 280},
+        "messages": [
+            {"role": "system", "content": "Speech lesson builder. JSON only. Exact viseme enums."},
+            {"role": "user", "content": prompt},
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            res.raise_for_status()
+            content = res.json().get("message", {}).get("content", "")
+            parsed = _extract_json(content)
+            if not parsed or not isinstance(parsed.get("steps"), list):
+                return None
+            steps_out: list[LessonStepOut] = []
+            for raw in parsed["steps"][:16]:
+                if not isinstance(raw, dict):
+                    continue
+                vis = _norm_viseme(raw.get("viseme"))
+                steps_out.append(
+                    LessonStepOut(
+                        label=str(raw.get("label") or vis)[:12],
+                        speak_as=str(raw.get("speak_as") or raw.get("speakAs") or vis).lower()[:16],
+                        viseme=vis,
+                        cue=str(raw.get("cue") or "Match the coach mouth")[:120],
+                        hold_ms=max(400, min(1600, int(raw.get("hold_ms") or raw.get("holdMs") or 650))),
+                    )
+                )
+            if not steps_out:
+                return None
+            clean = " ".join(text.strip().split())
+            return LessonResponse(
+                text=clean,
+                kind=kind,
+                tip=_norm_summary(parsed.get("tip"), "Watch each shape, then recreate it."),
+                steps=steps_out,
+                source="ollama",
+                model=OLLAMA_MODEL,
+            )
+    except Exception:
+        return None
+
+
 @app.get("/")
 async def root() -> dict[str, Any]:
     return {
@@ -334,7 +633,9 @@ async def root() -> dict[str, Any]:
         "health": "/health",
         "wake": "/wake",
         "analyze": "POST /analyze",
+        "lesson": "POST /lesson",
         "model": OLLAMA_MODEL,
+        "vision": True,
     }
 
 
@@ -347,6 +648,7 @@ async def health() -> dict[str, Any]:
         "ollama": ollama_ok,
         "model": OLLAMA_MODEL,
         "model_ready": has_model,
+        "vision": True,
         "models": models,
         "fallback": "heuristic",
     }
@@ -354,7 +656,7 @@ async def health() -> dict[str, Any]:
 
 @app.post("/wake")
 async def wake() -> dict[str, Any]:
-    """Ensure Ollama is up, model is pulled, and weights are warm in memory."""
+    """Ensure Ollama is up, vision model is pulled, and weights are warm."""
     ollama_ok, models = await _ollama_tags()
     if not ollama_ok:
         return {
@@ -363,7 +665,8 @@ async def wake() -> dict[str, Any]:
             "model": OLLAMA_MODEL,
             "model_ready": False,
             "warm": False,
-            "error": "Ollama not running. Start with: ollama serve",
+            "vision": True,
+            "error": "Ollama not running. Open the Ollama app.",
             "fallback": "heuristic",
         }
 
@@ -379,6 +682,7 @@ async def wake() -> dict[str, Any]:
                 "model": OLLAMA_MODEL,
                 "model_ready": False,
                 "warm": False,
+                "vision": True,
                 "error": f"Pull failed: {exc}",
                 "fallback": "heuristic",
             }
@@ -391,6 +695,7 @@ async def wake() -> dict[str, Any]:
         "model_ready": True,
         "pulled": pulled,
         "warm": warm,
+        "vision": True,
         "fallback": "heuristic",
     }
 
@@ -400,3 +705,13 @@ async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
     base = _heuristic(req)
     refined = await _ollama_refine(req, base)
     return refined or base
+
+
+@app.post("/lesson", response_model=LessonResponse)
+async def lesson(req: LessonRequest) -> LessonResponse:
+    """Build a watch-and-learn mouth-step lesson for a word or sentence."""
+    clean = " ".join((req.text or "").strip().split())
+    if not clean:
+        return _heuristic_lesson("ah", req.kind)
+    refined = await _ollama_lesson(clean, req.kind)
+    return refined or _heuristic_lesson(clean, req.kind)
