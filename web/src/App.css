@@ -147,33 +147,47 @@
 }
 
 .rotating-label {
-  display: inline-block;
-  min-height: 1.4em;
-  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5em;
+  min-width: 12ch;
+  font-size: 0.95rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.rotating-label--kids {
+  font-family: "Fredoka", "Comic Sans MS", "Chalkboard SE", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent-deep);
   letter-spacing: 0.02em;
-  color: var(--accent-deep);
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease;
 }
 
-.rotating-label.is-in {
-  opacity: 1;
-  transform: translateY(0);
+.rotating-label--guide {
+  font-family: var(--font-body);
+  color: var(--success);
 }
 
-.rotating-label.is-out {
-  opacity: 0;
-  transform: translateY(6px);
+.rotating-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  background: currentColor;
+  border-radius: 1px;
+  animation: blink 900ms steps(1) infinite;
 }
 
-.path-slp .rotating-label {
-  color: var(--accent-deep);
-}
-
-.path-guide .rotating-label {
-  color: #8a4a28;
+@keyframes blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .btn {
@@ -217,6 +231,17 @@
 
 .btn-accent:hover {
   background: linear-gradient(135deg, #f0843a, var(--accent-deep));
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #5a9a68, var(--success));
+  color: #f4fff7;
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(63, 115, 80, 0.28);
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #4e8a5c, #335f42);
 }
 
 .btn-ghost {
@@ -280,12 +305,6 @@
   transform: translateY(-1px);
   border-color: rgba(214, 90, 31, 0.4);
   background: #fff4e6;
-}
-
-.chip-hot {
-  background: var(--accent-soft);
-  border-color: rgba(214, 90, 31, 0.35);
-  color: var(--accent-deep);
 }
 
 @keyframes rise {

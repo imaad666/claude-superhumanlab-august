@@ -37,7 +37,7 @@ export function LandingPage() {
             what they learn with a therapist.
           </span>
           <span className="path-footer">
-            <RotatingLabel phrases={slpPhrases} />
+            <RotatingLabel phrases={slpPhrases} variant="kids" />
             <span className="btn btn-accent btn-in-card">Let’s go →</span>
           </span>
         </Link>
@@ -49,8 +49,8 @@ export function LandingPage() {
             stress, and rhythm light up.
           </span>
           <span className="path-footer">
-            <RotatingLabel phrases={guidePhrases} />
-            <span className="btn btn-primary btn-in-card">Explore modes →</span>
+            <RotatingLabel phrases={guidePhrases} variant="guide" />
+            <span className="btn btn-success btn-in-card">Let’s go →</span>
           </span>
         </Link>
       </nav>
@@ -61,7 +61,7 @@ export function LandingPage() {
           <Link className="chip" to="/guide/trainer">
             Personal Trainer
           </Link>
-          <Link className="chip chip-hot" to="/guide/live">
+          <Link className="chip" to="/guide/live">
             Live Guide
           </Link>
           <Link className="chip" to="/slp">
