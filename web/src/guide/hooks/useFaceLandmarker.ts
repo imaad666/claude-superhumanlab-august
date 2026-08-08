@@ -115,7 +115,11 @@ export function useFaceLandmarker(
             })) ?? null;
 
           if (face?.length) {
-            const landmarks = face as Point[];
+            const landmarks = face.map((p) => ({
+              x: p.x,
+              y: p.y,
+              z: p.z,
+            }));
             setState((prev) => ({
               ...prev,
               landmarks,

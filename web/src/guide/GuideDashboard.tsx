@@ -14,7 +14,7 @@ import { useFaceLandmarker } from "./hooks/useFaceLandmarker";
 import { useLiveTranscript } from "./hooks/useLiveTranscript";
 import { useSpectrogram } from "./hooks/useSpectrogram";
 import type { GuideMode, TranscriptWord } from "./types";
-import { visemeFromText, type VisemeId } from "./visemes";
+import { type VisemeId } from "./visemes";
 import "./GuideDashboard.css";
 
 type GuideDashboardProps = {
@@ -51,8 +51,8 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
   );
 
   const suggestedViseme = useMemo(
-    () => coachTarget ?? visemeFromText(latestText),
-    [coachTarget, latestText],
+    () => coachTarget ?? lips.visemeGuess,
+    [coachTarget, lips.visemeGuess],
   );
 
   const brain = useBrain({
@@ -79,10 +79,6 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
   }, [transcript.words, brain.insight]);
 
   const title = mode === "trainer" ? "Personal Trainer" : "Live Guide";
-  const hint =
-    mode === "trainer"
-      ? "Match the coach mouth — local brain reads lips, tone, and mood."
-      : "Local brain reads their tone, mood, and intention from face + voice.";
 
   const videoCallback = useCallback(
     (node: HTMLVideoElement | null) => {
@@ -101,27 +97,28 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
       <header className="guide-topbar">
         <div className="guide-topbar-left">
           <Link className="back" to="/guide">
-            ← Speech Guide
+            ← Back
           </Link>
-          <div>
-            <p className="eyebrow">{title}</p>
-            <h1 className="guide-title">{hint}</h1>
-          </div>
+          <h1 className="guide-title">{title}</h1>
         </div>
         <div className="guide-topbar-actions">
-          <span className="guide-pill guide-pill-soft">
-            {brain.status === "ready"
-              ? brain.ollama
-                ? "Brain online · Ollama"
-                : "Brain online · heuristic (install Gemma/Qwen for richer reads)"
-              : brain.error ?? "Brain offline"}
+          <span className="guide-pill brain-pill">
+            {!active
+              ? "Brain · idle"
+              : brain.waking
+                ? "Brain · waking…"
+                : brain.ollama && brain.modelReady
+                  ? "Brain · Qwen"
+                  : brain.serverOk
+                    ? "Brain · local"
+                    : "Brain · on-device"}
           </span>
           <button
             type="button"
             className={active ? "btn btn-primary" : "btn btn-accent"}
             onClick={() => setActive((value) => !value)}
           >
-            {active ? "Pause session" : "Start session"}
+            {active ? "Pause" : "Start"}
           </button>
         </div>
       </header>
@@ -132,11 +129,7 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
             <header className="guide-panel-head">
               <h2>Camera</h2>
               <span className="guide-pill">
-                {camera.error
-                  ? "Permission needed"
-                  : active
-                    ? "Live"
-                    : "Ready"}
+                {camera.error ? "Need access" : active ? "Live" : "Off"}
               </span>
             </header>
             <div className="camera-frame">
@@ -146,10 +139,8 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
                 playsInline
                 muted
               />
-              {!active && (
-                <p className="guide-empty">
-                  Hit Start session to open camera + mic.
-                </p>
+              {!active && !camera.error && (
+                <p className="guide-empty">Press Start</p>
               )}
               {camera.error && (
                 <p className="guide-empty guide-error">{camera.error}</p>
@@ -178,8 +169,11 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
 
         <div className="guide-right">
           <LipCoachPanel
-            suggestedId={suggestedViseme}
             mode={mode}
+            lips={lips}
+            expression={expression}
+            landmarks={face.landmarks}
+            tracking={active && Boolean(face.landmarks)}
             brainCue={brain.insight?.lipCue ?? null}
             lipMatch={brain.insight?.lipMatch ?? null}
             onSelectTarget={onSelectTarget}
@@ -188,6 +182,8 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
             insight={brain.insight}
             brainError={brain.error}
             ollama={brain.ollama}
+            serverOk={brain.serverOk}
+            waking={brain.waking}
             volume={spectro.volume}
             pitchHint={spectro.pitchHint}
             canvasRef={setSpectroCanvas}

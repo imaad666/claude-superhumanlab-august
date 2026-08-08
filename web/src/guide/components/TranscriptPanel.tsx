@@ -30,12 +30,7 @@ export function TranscriptPanel({
   return (
     <section className="guide-panel transcript-panel">
       <header className="guide-panel-head">
-        <div>
-          <h2>Transcription</h2>
-          <p className="guide-sub">
-            Color = tonality · {listening ? "listening" : "paused"}
-          </p>
-        </div>
+        <h2>Transcription {listening ? "" : "· paused"}</h2>
         <div className="transcript-controls">
           <button
             type="button"
@@ -67,30 +62,24 @@ export function TranscriptPanel({
         className="transcript-body"
         style={{ fontSize: `${1.35 * fontScale}rem` }}
       >
-        {words.length === 0 && !interim && (
-          <p className="guide-empty">Start speaking — words will land here.</p>
+        {words.length === 0 && !interim ? (
+          <p className="guide-empty">Speak to begin</p>
+        ) : (
+          <p className="transcript-line">
+            {words.map((word) => (
+              <span
+                key={word.id}
+                className={`transcript-word ${TONE_CLASS[word.tone]}`}
+                title={TONE_LABELS[word.tone]}
+              >
+                {word.text}{" "}
+              </span>
+            ))}
+            {interim && <span className="transcript-interim">{interim}</span>}
+          </p>
         )}
-        <p className="transcript-line">
-          {words.map((word) => (
-            <span
-              key={word.id}
-              className={`transcript-word ${TONE_CLASS[word.tone]}`}
-              title={TONE_LABELS[word.tone]}
-            >
-              {word.text}{" "}
-            </span>
-          ))}
-          {interim && <span className="transcript-interim">{interim}</span>}
-        </p>
+        {error && <p className="guide-error">{error}</p>}
       </div>
-
-      <footer className="tone-legend">
-        <span className="tone-calm">steady</span>
-        <span className="tone-warm">warm</span>
-        <span className="tone-bright">emphasis</span>
-        <span className="tone-soft">gentle</span>
-        {error && <span className="guide-error">{error}</span>}
-      </footer>
     </section>
   );
 }

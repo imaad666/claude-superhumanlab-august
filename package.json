@@ -1,0 +1,10 @@
+{
+  "name": "claude-superhuman",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "brain": "cd server && OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:0.5b} .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --reload",
+    "web": "cd web && npm run dev -- --host 127.0.0.1 --port 5173",
+    "wake": "curl -s -X POST http://127.0.0.1:8000/wake | python3 -m json.tool"
+  }
+}

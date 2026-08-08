@@ -1,9 +1,12 @@
 import type { BrainInsight } from "../hooks/useBrain";
+import { TONE_LABELS } from "../types";
 
 type InsightPanelProps = {
   insight: BrainInsight | null;
   brainError: string | null;
   ollama: boolean;
+  serverOk: boolean;
+  waking?: boolean;
   volume: number;
   pitchHint: number;
   canvasRef: (node: HTMLCanvasElement | null) => void;
@@ -14,58 +17,55 @@ export function InsightPanel({
   insight,
   brainError,
   ollama,
-  volume,
-  pitchHint,
+  serverOk,
+  waking = false,
   canvasRef,
   spectroError,
 }: InsightPanelProps) {
+  const sourceLabel = !insight
+    ? "Idle"
+    : waking
+      ? "Waking model…"
+      : ollama && insight.source === "ollama"
+        ? insight.model ?? "Qwen"
+        : serverOk
+          ? "Local brain"
+          : "On-device";
+
   return (
     <section className="guide-panel insight-panel">
       <header className="guide-panel-head">
-        <div>
-          <h2>Voice & meaning</h2>
-          <p className="guide-sub">
-            Spectrogram + brain ·{" "}
-            {insight
-              ? insight.source === "ollama"
-                ? `Ollama ${insight.model ?? ""}`
-                : "local heuristic"
-              : ollama
-                ? "Ollama ready"
-                : "waiting"}
-          </p>
-        </div>
-        <span className="guide-pill">
-          vol {(volume * 100).toFixed(0)}% · pitch{" "}
-          {(pitchHint * 100).toFixed(0)}
-        </span>
+        <h2>Brain</h2>
+        <span className="guide-pill">{sourceLabel}</span>
       </header>
 
-      <div className="insight-readout">
-        {insight ? (
-          <>
-            <div className="insight-chips">
-              <span className={`insight-chip tone-${insight.tone}`}>
-                Tone · {insight.tone}
-              </span>
-              <span className="insight-chip">{insight.mood}</span>
-              <span className="insight-chip insight-chip-hot">
-                {insight.intention}
-              </span>
-              <span className={`insight-chip match-${insight.lipMatch}`}>
-                Lips · {insight.lipMatch.replace("_", " ")}
-              </span>
-            </div>
-            <p className="insight-summary">{insight.summary}</p>
+      {insight ? (
+        <div className="insight-body">
+          <div className="insight-chips" aria-label="Tone mood intention">
+            <span className={`insight-chip tone-${insight.tone}`}>
+              {TONE_LABELS[insight.tone] ?? insight.tone}
+            </span>
+            <span className="insight-chip">{insight.mood}</span>
+            <span className="insight-chip insight-chip-hot">
+              {insight.intention}
+            </span>
+            <span className={`insight-chip match-${insight.lipMatch}`}>
+              lips · {insight.lipMatch.replace("_", " ")}
+            </span>
+          </div>
+
+          <p className="insight-summary">{insight.summary}</p>
+          {insight.lipCue && (
             <p className="insight-cue">{insight.lipCue}</p>
-          </>
-        ) : (
+          )}
+        </div>
+      ) : (
+        <div className="insight-body">
           <p className="insight-summary muted">
-            {brainError ??
-              "Start a session — tone, mood, and intention will land here."}
+            {brainError ?? "Press Start — brain fuses lips, voice, and words."}
           </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="spectro-frame insight-spectro">
         <canvas ref={canvasRef} className="spectro-canvas" />

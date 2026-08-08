@@ -6,6 +6,10 @@ type SpectrogramState = {
   error: string | null;
 };
 
+/**
+ * Audio metrics always run when mic is live.
+ * Canvas is optional — only used to paint the scrolling spectrogram.
+ */
 export function useSpectrogram(
   stream: MediaStream | null,
   canvas: HTMLCanvasElement | null,
@@ -16,15 +20,11 @@ export function useSpectrogram(
     pitchHint: 0,
     error: null,
   });
-
-  const audioRef = useRef<{
-    context: AudioContext;
-    analyser: AnalyserNode;
-    source: MediaStreamAudioSourceNode;
-  } | null>(null);
+  const canvasRef = useRef(canvas);
+  canvasRef.current = canvas;
 
   useEffect(() => {
-    if (!enabled || !stream || !canvas) return;
+    if (!enabled || !stream) return;
 
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) {
@@ -37,68 +37,75 @@ export function useSpectrogram(
     const context = new AudioContext();
     const analyser = context.createAnalyser();
     analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.7;
+    analyser.smoothingTimeConstant = 0.55;
     const source = context.createMediaStreamSource(stream);
     source.connect(analyser);
-    audioRef.current = { context, analyser, source };
 
     const freq = new Uint8Array(analyser.frequencyBinCount);
     const time = new Uint8Array(analyser.fftSize);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const resize = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.floor(width * dpr));
-      canvas.height = Math.max(1, Math.floor(height * dpr));
-    };
-    resize();
-    window.addEventListener("resize", resize);
 
     const draw = () => {
-      if (cancelled || !ctx) return;
+      if (cancelled) return;
       analyser.getByteFrequencyData(freq);
       analyser.getByteTimeDomainData(time);
 
       let sum = 0;
+      let peak = 0;
       for (let i = 0; i < time.length; i += 1) {
         const v = (time[i] - 128) / 128;
         sum += v * v;
+        peak = Math.max(peak, Math.abs(v));
       }
-      const volume = Math.sqrt(sum / time.length);
+      // Blend RMS + peak so quiet speech still registers
+      const rms = Math.sqrt(sum / time.length);
+      const volume = Math.min(1, rms * 2.8 + peak * 0.45);
 
       let weighted = 0;
       let total = 0;
-      for (let i = 0; i < freq.length; i += 1) {
-        weighted += i * freq[i];
+      // Focus on speech band bins (~80Hz–3kHz-ish)
+      const lo = Math.floor(freq.length * 0.02);
+      const hi = Math.floor(freq.length * 0.35);
+      for (let i = lo; i < hi; i += 1) {
+        weighted += (i - lo) * freq[i];
         total += freq[i];
       }
-      const pitchHint = total > 0 ? weighted / total / freq.length : 0;
+      const pitchHint = total > 0 ? weighted / total / Math.max(1, hi - lo) : 0;
 
-      // Scroll spectrogram left by 2px, draw new column on the right
-      const w = canvas.width;
-      const h = canvas.height;
-      const image = ctx.getImageData(2, 0, w - 2, h);
-      ctx.putImageData(image, 0, 0);
-
-      const col = w - 2;
-      for (let y = 0; y < h; y += 1) {
-        const bin = Math.floor((1 - y / h) * (freq.length - 1));
-        const value = freq[bin] / 255;
-        const r = Math.floor(40 + value * 180);
-        const g = Math.floor(60 + value * 90);
-        const b = Math.floor(30 + value * 40);
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(col, y, 2, 1);
+      const paint = canvasRef.current;
+      const ctx = paint?.getContext("2d") ?? null;
+      if (paint && ctx) {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = paint.getBoundingClientRect();
+        const needW = Math.max(1, Math.floor(rect.width * dpr));
+        const needH = Math.max(1, Math.floor(rect.height * dpr));
+        if (paint.width !== needW || paint.height !== needH) {
+          paint.width = needW;
+          paint.height = needH;
+        }
+        const w = paint.width;
+        const h = paint.height;
+        if (w > 2 && h > 2) {
+          const image = ctx.getImageData(2, 0, w - 2, h);
+          ctx.putImageData(image, 0, 0);
+          const col = w - 2;
+          for (let y = 0; y < h; y += 1) {
+            const bin = Math.floor((1 - y / h) * (freq.length - 1));
+            const value = freq[bin] / 255;
+            const r = Math.floor(40 + value * 180);
+            const g = Math.floor(60 + value * 90);
+            const b = Math.floor(30 + value * 40);
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(col, y, 2, 1);
+          }
+        }
       }
 
       setMetrics((prev) => {
         const nextVolume = Math.round(volume * 100) / 100;
         const nextPitch = Math.round(pitchHint * 100) / 100;
         if (
-          Math.abs(prev.volume - nextVolume) < 0.02 &&
-          Math.abs(prev.pitchHint - nextPitch) < 0.02 &&
+          Math.abs(prev.volume - nextVolume) < 0.01 &&
+          Math.abs(prev.pitchHint - nextPitch) < 0.01 &&
           !prev.error
         ) {
           return prev;
@@ -115,12 +122,10 @@ export function useSpectrogram(
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
-      window.removeEventListener("resize", resize);
       source.disconnect();
       void context.close();
-      audioRef.current = null;
     };
-  }, [enabled, stream, canvas]);
+  }, [enabled, stream]);
 
   return metrics;
 }

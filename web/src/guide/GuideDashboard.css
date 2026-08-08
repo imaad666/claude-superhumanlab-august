@@ -1,74 +1,81 @@
+/* Speak & See — Speech Guide dashboard (viewport-locked) */
+
 .guide-shell {
-  min-height: 100vh;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: var(--space-6) var(--space-6) var(--space-8);
+  height: 100dvh;
+  max-height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px 10px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .guide-topbar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
+  flex-wrap: nowrap;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .guide-topbar-left {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .guide-topbar-left .back {
   margin: 0;
   animation: none;
+  flex-shrink: 0;
 }
 
-.guide-title {
-  margin: 0;
-  max-width: 36ch;
-  font-family: var(--font-display);
-  font-size: clamp(1.35rem, 2.4vw, 1.75rem);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.25;
-  color: var(--ink);
+.guide-topbar-left .eyebrow {
+  margin: 0 0 2px;
 }
 
 .guide-topbar-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.guide-title {
+  margin: 0;
+  max-width: 42ch;
+  font-family: var(--font-display);
+  font-size: clamp(0.95rem, 1.5vw, 1.15rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--ink);
 }
 
 .guide-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 0.9fr) minmax(280px, 1.3fr) minmax(
-      220px,
-      0.9fr
-    );
-  grid-template-rows: auto;
-  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 8px;
   align-items: stretch;
-  min-height: min(70vh, 720px);
-}
-
-.guide-left {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
 }
 
+.guide-left,
 .guide-right {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 8px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .guide-panel {
@@ -76,7 +83,7 @@
   flex-direction: column;
   min-height: 0;
   border: 1.5px solid var(--line-strong);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   background: linear-gradient(165deg, var(--bg-elevated), #f3dcc0);
   overflow: hidden;
 }
@@ -85,21 +92,22 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 
 .guide-panel-head h2 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
 }
 
 .guide-sub {
-  margin: 4px 0 0;
-  font-size: 0.8rem;
+  margin: 2px 0 0;
+  font-size: 0.72rem;
   color: var(--ink-tertiary);
 }
 
@@ -117,13 +125,20 @@
 }
 
 .guide-pill-soft {
-  max-width: 42ch;
-  white-space: normal;
-  line-height: 1.35;
+  max-width: 28ch;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .camera-panel {
-  flex: 1.1;
+  flex: 1.15;
+  min-height: 0;
+}
+
+.lip-panel {
+  flex: 0.85;
+  min-height: 0;
 }
 
 .camera-frame,
@@ -131,7 +146,7 @@
 .spectro-frame {
   position: relative;
   flex: 1;
-  min-height: 160px;
+  min-height: 0;
   background: #2a1f16;
 }
 
@@ -144,34 +159,32 @@
   object-fit: cover;
 }
 
-.lip-panel {
-  flex: 0.9;
-}
-
 .lip-canvas {
   object-fit: contain;
   background: #2a1f16;
 }
 
 .transcript-panel {
-  min-height: 420px;
+  min-height: 0;
+  height: 100%;
 }
 
 .transcript-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 6px;
 }
 
 .btn-compact {
-  padding: 7px 12px;
-  font-size: 0.85rem;
+  padding: 6px 10px;
+  font-size: 0.8rem;
 }
 
 .transcript-body {
   flex: 1;
-  padding: var(--space-5, 20px) var(--space-4);
+  padding: 12px 10px;
   overflow: auto;
+  min-height: 0;
 }
 
 .transcript-line {
@@ -185,7 +198,6 @@
   display: inline;
   padding: 0 1px;
   border-radius: 4px;
-  transition: background 160ms ease;
 }
 
 .tone-calm {
@@ -213,39 +225,53 @@
 .tone-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  gap: 8px;
+  padding: 6px 10px;
   border-top: 1px solid var(--line);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .insight-panel {
   flex: 1;
-  min-height: 260px;
+  min-height: 0;
+}
+
+.insight-body {
+  padding: 8px 10px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.brain-pill {
+  text-transform: none;
 }
 
 .insight-readout {
-  padding: var(--space-3) var(--space-4);
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .insight-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .insight-chip {
   display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: rgba(255, 246, 234, 0.75);
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: capitalize;
   color: var(--ink);
@@ -282,9 +308,9 @@
 
 .insight-summary {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--ink);
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .insight-summary.muted {
@@ -294,18 +320,153 @@
 .insight-cue {
   margin: 0;
   font-family: "Fredoka", "Comic Sans MS", sans-serif;
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   color: var(--accent-deep);
 }
 
 .insight-spectro {
-  min-height: 120px;
+  min-height: 0;
   flex: 1;
 }
 
+.spectro-canvas {
+  image-rendering: pixelated;
+}
+
+.coach-panel {
+  flex: 1.25;
+  min-height: 0;
+}
+
+.coach-stack {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+.coach-stack .lip-mesh3d {
+  flex: 1;
+  min-height: 0;
+}
+
+.coach-picks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.coach-cue {
+  margin: 0;
+  text-align: center;
+  font-family: "Fredoka", "Comic Sans MS", sans-serif;
+  font-size: 0.9rem;
+  color: var(--accent-deep);
+  flex-shrink: 0;
+}
+
+.coach-body {
+  display: none;
+}
+
+.coach-copy {
+  display: none;
+}
+
+.lip-mesh3d {
+  position: relative;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.lip-mesh3d:active {
+  cursor: grabbing;
+}
+
+.lip-mesh3d canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.lip-mesh3d-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  color: var(--ink-tertiary);
+  font-size: 0.85rem;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.coach-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.coach-sound {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.coach-ipa {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.coach-cue {
+  margin: 0;
+  font-family: "Fredoka", "Comic Sans MS", sans-serif;
+  font-size: 0.92rem;
+  color: var(--accent-deep);
+}
+
+.coach-tip {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-secondary);
+  line-height: 1.35;
+}
+
+.coach-metrics {
+  margin: 0;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
 .coach-match {
-  margin: 4px 0 0;
-  font-size: 0.82rem;
+  margin: 2px 0 0;
+  font-size: 0.78rem;
   font-weight: 700;
   text-transform: capitalize;
 }
@@ -322,92 +483,15 @@
   color: var(--gentle);
 }
 
-.spectro-canvas {
-  image-rendering: pixelated;
-}
-
-.coach-panel {
-  flex: 1.15;
-}
-
-.coach-body {
-  display: grid;
-  grid-template-columns: 1fr 1.1fr;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  align-items: center;
-}
-
-.guide-mouth {
-  display: grid;
-  place-items: center;
-}
-
-.guide-mouth-svg {
-  width: min(100%, 160px);
-  height: auto;
-  filter: drop-shadow(0 8px 16px rgba(90, 52, 24, 0.18));
-}
-
-.mouth-outer,
-.mouth-open {
-  transition: d 280ms ease;
-}
-
-.coach-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.coach-sound {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.45rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.coach-ipa {
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  color: var(--accent-deep);
-  font-weight: 600;
-}
-
-.coach-cue {
-  margin: 0;
-  font-family: "Fredoka", "Comic Sans MS", sans-serif;
-  font-size: 1.05rem;
-  color: var(--accent-deep);
-}
-
-.coach-tip {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--ink-secondary);
-  line-height: 1.4;
-}
-
-.coach-picks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 var(--space-4) var(--space-4);
-}
-
 .coach-pick {
   appearance: none;
   border: 1.5px solid var(--line-strong);
   background: rgba(255, 246, 234, 0.7);
   color: var(--ink);
   border-radius: 999px;
-  padding: 6px 12px;
+  padding: 5px 10px;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   transition:
@@ -439,10 +523,10 @@
   display: grid;
   place-items: center;
   margin: 0;
-  padding: var(--space-4);
+  padding: 12px;
   text-align: center;
   color: rgba(255, 246, 234, 0.72);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   pointer-events: none;
 }
 
@@ -456,18 +540,25 @@
 }
 
 @media (max-width: 980px) {
+  .guide-shell {
+    height: auto;
+    max-height: none;
+    overflow: auto;
+  }
+
   .guide-grid {
     grid-template-columns: 1fr;
-    min-height: 0;
   }
 
-  .camera-frame {
-    min-height: 220px;
+  .guide-topbar {
+    flex-wrap: wrap;
   }
 
+  .camera-frame,
   .lip-frame,
-  .spectro-frame {
-    min-height: 200px;
+  .spectro-frame,
+  .lip-mesh3d {
+    min-height: 160px;
   }
 
   .coach-body {

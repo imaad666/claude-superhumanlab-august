@@ -1,126 +1,86 @@
 import { useEffect, useMemo, useState } from "react";
-import { VISEMES, type VisemeGuide, type VisemeId } from "../visemes";
+import type { ExpressionFeatures, LipFeatures } from "../features";
+import type { Point } from "../lips";
+import { VISEMES, type VisemeId } from "../visemes";
+import { LipMesh3D } from "./LipMesh3D";
 
 type LipCoachPanelProps = {
-  suggestedId?: VisemeId;
   mode: "trainer" | "live";
+  lips: LipFeatures;
+  expression: ExpressionFeatures;
+  landmarks: Point[] | null;
+  tracking: boolean;
   brainCue?: string | null;
   lipMatch?: "good" | "close" | "try_again" | null;
   onSelectTarget?: (id: VisemeId | null) => void;
 };
 
 export function LipCoachPanel({
-  suggestedId = "rest",
-  mode,
+  lips,
+  landmarks,
+  tracking,
   brainCue,
   lipMatch,
   onSelectTarget,
 }: LipCoachPanelProps) {
-  const [selectedId, setSelectedId] = useState<VisemeId>(suggestedId);
+  const liveViseme = lips.visemeGuess;
+  const [targetId, setTargetId] = useState<VisemeId>(liveViseme);
   const [followLive, setFollowLive] = useState(true);
 
   useEffect(() => {
-    if (followLive) setSelectedId(suggestedId);
-  }, [followLive, suggestedId]);
+    if (followLive) {
+      setTargetId(liveViseme);
+      onSelectTarget?.(null);
+    }
+  }, [followLive, liveViseme, onSelectTarget]);
 
-  const guide = useMemo(
-    () => VISEMES.find((item) => item.id === selectedId) ?? VISEMES[0],
-    [selectedId],
-  );
+  const liveLabel =
+    VISEMES.find((item) => item.id === liveViseme)?.label ?? "—";
+
+  const cue = useMemo(() => {
+    if (brainCue) return brainCue;
+    return VISEMES.find((item) => item.id === targetId)?.cue ?? "";
+  }, [brainCue, targetId]);
 
   return (
     <section className="guide-panel coach-panel">
       <header className="guide-panel-head">
-        <div>
-          <h2>Lip coach</h2>
-          <p className="guide-sub">
-            {mode === "trainer"
-              ? "Match this mouth shape with yours"
-              : "See the shape that fits what you’re hearing"}
-          </p>
-        </div>
-        <button
-          type="button"
-          className={`btn btn-ghost btn-compact ${followLive ? "is-active" : ""}`}
-          onClick={() => {
-            const next = !followLive;
-            setFollowLive(next);
-            if (next) onSelectTarget?.(null);
-          }}
-        >
-          {followLive ? "Following speech" : "Manual pick"}
-        </button>
+        <h2>Lip coach</h2>
+        <span className="guide-pill">
+          {tracking ? liveLabel : "Idle"}
+          {lipMatch ? ` · ${lipMatch.replace("_", " ")}` : ""}
+        </span>
       </header>
 
-      <div className="coach-body">
-        <GuideMouth guide={guide} />
+      <div className="coach-stack">
+        <LipMesh3D landmarks={landmarks} tracking={tracking} />
 
-        <div className="coach-copy">
-          <p className="coach-sound">
-            <span>{guide.label}</span>
-            <span className="coach-ipa">{guide.sound}</span>
-          </p>
-          <p className="coach-cue">{guide.cue}</p>
-          <p className="coach-tip">{brainCue || guide.tip}</p>
-          {lipMatch && (
-            <p className={`coach-match match-${lipMatch}`}>
-              Match: {lipMatch.replace("_", " ")}
-            </p>
-          )}
+        <p className="coach-metrics">
+          open {(lips.openness * 100).toFixed(0)}% · wide{" "}
+          {(lips.width * 100).toFixed(0)}% · round{" "}
+          {(lips.roundness * 100).toFixed(0)}%
+        </p>
+
+        <div className="coach-picks" role="list" aria-label="Practice targets">
+          {VISEMES.filter((item) => item.id !== "rest").map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="listitem"
+              className={`coach-pick ${targetId === item.id ? "is-selected" : ""}`}
+              onClick={() => {
+                setFollowLive(false);
+                setTargetId(item.id);
+                onSelectTarget?.(item.id);
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
-      </div>
 
-      <div className="coach-picks" role="list" aria-label="Practice shapes">
-        {VISEMES.filter((item) => item.id !== "rest").map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="listitem"
-            className={`coach-pick ${selectedId === item.id ? "is-selected" : ""}`}
-            onClick={() => {
-              setFollowLive(false);
-              setSelectedId(item.id);
-              onSelectTarget?.(item.id);
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        {cue && <p className="coach-cue">{cue}</p>}
       </div>
     </section>
-  );
-}
-
-function GuideMouth({ guide }: { guide: VisemeGuide }) {
-  return (
-    <div className="guide-mouth" aria-hidden="true">
-      <svg viewBox="0 0 120 120" className="guide-mouth-svg">
-        <defs>
-          <radialGradient id="mouthSkin" cx="50%" cy="40%" r="65%">
-            <stop offset="0%" stopColor="#f3c4a4" />
-            <stop offset="100%" stopColor="#d59a78" />
-          </radialGradient>
-          <linearGradient id="lipPink" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#e8897a" />
-            <stop offset="100%" stopColor="#c45c4a" />
-          </linearGradient>
-        </defs>
-        <circle cx="60" cy="60" r="52" fill="url(#mouthSkin)" opacity="0.35" />
-        <path
-          className="mouth-outer"
-          d={guide.outer}
-          fill="url(#lipPink)"
-          stroke="#9a3f32"
-          strokeWidth="1.5"
-        />
-        <path
-          className="mouth-open"
-          d={guide.opening}
-          fill="#2a1f16"
-          stroke="#1a1410"
-          strokeWidth="1"
-        />
-      </svg>
-    </div>
   );
 }

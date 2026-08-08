@@ -12,7 +12,6 @@ type LipCropPanelProps = {
 export function LipCropPanel({
   video,
   lipBox,
-  landmarks,
   status,
   error,
 }: LipCropPanelProps) {
@@ -57,49 +56,20 @@ export function LipCropPanel({
     }
     ctx.clip();
     ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
-
-    if (landmarks) {
-      ctx.strokeStyle = "rgba(232, 115, 42, 0.85)";
-      ctx.fillStyle = "rgba(232, 115, 42, 0.9)";
-      ctx.lineWidth = 1.5;
-      for (const point of landmarks) {
-        const px = dx + ((point.x * vw - sx) / sw) * dw;
-        const py = dy + ((point.y * vh - sy) / sh) * dh;
-        if (px < 0 || py < 0 || px > size || py > size) continue;
-        // Only draw points inside lip box roughly
-        if (
-          point.x < lipBox.x ||
-          point.x > lipBox.x + lipBox.w ||
-          point.y < lipBox.y ||
-          point.y > lipBox.y + lipBox.h
-        ) {
-          continue;
-        }
-        ctx.beginPath();
-        ctx.arc(px, py, 1.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
     ctx.restore();
-  }, [video, lipBox, landmarks, video?.currentTime]);
+  }, [video, lipBox, video?.currentTime]);
 
   return (
     <section className="guide-panel lip-panel">
       <header className="guide-panel-head">
         <h2>Lips</h2>
         <span className="guide-pill">
-          {status === "loading" && "Loading MediaPipe…"}
-          {status === "ready" && (lipBox ? "Tracking" : "Find a face")}
-          {status === "error" && "Offline"}
+          {status === "ready" && lipBox ? "Live" : status === "error" ? "Off" : "…"}
         </span>
       </header>
       <div className="lip-frame">
         <canvas ref={canvasRef} className="lip-canvas" />
-        {!lipBox && (
-          <p className="guide-empty">
-            {error ?? "Waiting for lip landmarks…"}
-          </p>
-        )}
+        {!lipBox && error && <p className="guide-empty">{error}</p>}
       </div>
     </section>
   );
