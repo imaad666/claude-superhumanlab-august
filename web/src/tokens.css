@@ -1,0 +1,45 @@
+:root {
+  /* Surfaces — warm Claude paper */
+  --bg: #e8dcc8;
+  --bg-elevated: #f3e8d6;
+  --bg-sunken: #dccfba;
+
+  /* Ink — brown, not cool charcoal */
+  --ink: #2c241c;
+  --ink-secondary: #6b5e50;
+  --ink-tertiary: #9a8b78;
+  --ink-inverse: #f4efe6;
+
+  /* Lines — soft brown grid */
+  --line: rgba(74, 58, 40, 0.11);
+  --line-strong: rgba(74, 58, 40, 0.18);
+
+  /* Accent — warm clay */
+  --accent: #b85a2f;
+  --accent-soft: #edd9c8;
+
+  /* Feedback (encouraging, not clinical) */
+  --success: #4a6b52;
+  --success-soft: #dde8df;
+  --warn: #a67c2e;
+  --warn-soft: #f0e6cf;
+  --gentle: #8f6a4a;
+  --gentle-soft: #ebe0d4;
+
+  /* Type */
+  --font-display: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-body: "Geist", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, monospace;
+
+  /* Radius / space */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+}
