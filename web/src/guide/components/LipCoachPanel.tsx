@@ -2,12 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import { VISEMES, type VisemeGuide, type VisemeId } from "../visemes";
 
 type LipCoachPanelProps = {
-  /** Suggested target from live speech; user can still pick manually */
   suggestedId?: VisemeId;
   mode: "trainer" | "live";
+  brainCue?: string | null;
+  lipMatch?: "good" | "close" | "try_again" | null;
+  onSelectTarget?: (id: VisemeId | null) => void;
 };
 
-export function LipCoachPanel({ suggestedId = "rest", mode }: LipCoachPanelProps) {
+export function LipCoachPanel({
+  suggestedId = "rest",
+  mode,
+  brainCue,
+  lipMatch,
+  onSelectTarget,
+}: LipCoachPanelProps) {
   const [selectedId, setSelectedId] = useState<VisemeId>(suggestedId);
   const [followLive, setFollowLive] = useState(true);
 
@@ -34,7 +42,11 @@ export function LipCoachPanel({ suggestedId = "rest", mode }: LipCoachPanelProps
         <button
           type="button"
           className={`btn btn-ghost btn-compact ${followLive ? "is-active" : ""}`}
-          onClick={() => setFollowLive((value) => !value)}
+          onClick={() => {
+            const next = !followLive;
+            setFollowLive(next);
+            if (next) onSelectTarget?.(null);
+          }}
         >
           {followLive ? "Following speech" : "Manual pick"}
         </button>
@@ -49,7 +61,12 @@ export function LipCoachPanel({ suggestedId = "rest", mode }: LipCoachPanelProps
             <span className="coach-ipa">{guide.sound}</span>
           </p>
           <p className="coach-cue">{guide.cue}</p>
-          <p className="coach-tip">{guide.tip}</p>
+          <p className="coach-tip">{brainCue || guide.tip}</p>
+          {lipMatch && (
+            <p className={`coach-match match-${lipMatch}`}>
+              Match: {lipMatch.replace("_", " ")}
+            </p>
+          )}
         </div>
       </div>
 
@@ -63,6 +80,7 @@ export function LipCoachPanel({ suggestedId = "rest", mode }: LipCoachPanelProps
             onClick={() => {
               setFollowLive(false);
               setSelectedId(item.id);
+              onSelectTarget?.(item.id);
             }}
           >
             {item.label}

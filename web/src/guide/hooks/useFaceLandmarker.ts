@@ -4,6 +4,7 @@ import {
   type FaceLandmarkerResult,
 } from "@mediapipe/tasks-vision";
 import { useEffect, useRef, useState } from "react";
+import type { BlendshapeScore } from "../features";
 import { lipBoundingBox, type Point } from "../lips";
 
 type LipBox = { x: number; y: number; w: number; h: number };
@@ -11,9 +12,26 @@ type LipBox = { x: number; y: number; w: number; h: number };
 type FaceLandmarkerState = {
   lipBox: LipBox | null;
   landmarks: Point[] | null;
+  blendshapes: BlendshapeScore[] | null;
   status: "loading" | "ready" | "error";
   error: string | null;
 };
+
+const MODEL =
+  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const WASM =
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm";
+
+async function createLandmarker(delegate: "GPU" | "CPU") {
+  const vision = await FilesetResolver.forVisionTasks(WASM);
+  return FaceLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: MODEL, delegate },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: false,
+  });
+}
 
 export function useFaceLandmarker(
   video: HTMLVideoElement | null,
@@ -25,6 +43,7 @@ export function useFaceLandmarker(
   const [state, setState] = useState<FaceLandmarkerState>({
     lipBox: null,
     landmarks: null,
+    blendshapes: null,
     status: "loading",
     error: null,
   });
@@ -36,57 +55,22 @@ export function useFaceLandmarker(
 
     async function init() {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm",
-        );
-        const landmarker = await FaceLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numFaces: 1,
-        });
+        let landmarker: FaceLandmarker;
+        try {
+          landmarker = await createLandmarker("GPU");
+        } catch {
+          landmarker = await createLandmarker("CPU");
+        }
         if (cancelled) {
           landmarker.close();
           return;
         }
         landmarkerRef.current = landmarker;
         setState((prev) => ({ ...prev, status: "ready", error: null }));
-      } catch (gpuError) {
-        try {
-          const vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm",
-          );
-          const landmarker = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-              delegate: "CPU",
-            },
-            runningMode: "VIDEO",
-            numFaces: 1,
-          });
-          if (cancelled) {
-            landmarker.close();
-            return;
-          }
-          landmarkerRef.current = landmarker;
-          setState((prev) => ({ ...prev, status: "ready", error: null }));
-        } catch (error) {
-          const message =
-            error instanceof Error
-              ? error.message
-              : gpuError instanceof Error
-                ? gpuError.message
-                : "MediaPipe failed to load";
-          setState((prev) => ({
-            ...prev,
-            status: "error",
-            error: message,
-          }));
-        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "MediaPipe failed to load";
+        setState((prev) => ({ ...prev, status: "error", error: message }));
       }
     }
 
@@ -123,19 +107,27 @@ export function useFaceLandmarker(
         frameRef.current += 1;
         if (frameRef.current % 2 === 0) {
           const face = result?.faceLandmarks?.[0];
+          const categories = result?.faceBlendshapes?.[0]?.categories ?? null;
+          const blendshapes =
+            categories?.map((c) => ({
+              categoryName: c.categoryName,
+              score: c.score,
+            })) ?? null;
+
           if (face?.length) {
             const landmarks = face as Point[];
-            const box = lipBoundingBox(landmarks);
             setState((prev) => ({
               ...prev,
               landmarks,
-              lipBox: box,
+              lipBox: lipBoundingBox(landmarks),
+              blendshapes,
             }));
           } else {
             setState((prev) => ({
               ...prev,
               landmarks: null,
               lipBox: null,
+              blendshapes: null,
             }));
           }
         }
