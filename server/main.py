@@ -90,6 +90,72 @@ class AnalyzeResponse(BaseModel):
     used_vision: bool = False
 
 
+FeedbackFocus = Literal["maneuver", "sound", "stress"]
+
+
+class AttemptTarget(BaseModel):
+    openness: float = 0.0
+    width: float = 0.0
+    roundness: float = 0.0
+    volume: float = 0.1
+
+
+class AttemptObservation(BaseModel):
+    openness: float = 0.0
+    width: float = 0.0
+    roundness: float = 0.0
+    volume: float = 0.0
+    pitch_hint: float = 0.0
+    voiced_ms: int = 0
+    sample_count: int = 0
+    # Expression / Brain-panel signals recorded during the step.
+    smile: float = 0.0
+    jaw_open: float = 0.0
+    mouth_funnel: float = 0.0
+    brow_up: float = 0.0
+    brow_down: float = 0.0
+    # Shape error vs target (0–1), for coaching priority.
+    openness_err: float = 0.0
+    width_err: float = 0.0
+    roundness_err: float = 0.0
+
+
+class AttemptStepIn(BaseModel):
+    label: str = ""
+    speak_as: str = ""
+    viseme: str = "A"
+    target: AttemptTarget = Field(default_factory=AttemptTarget)
+    observed: AttemptObservation | None = None
+    local_match: Match = "try_again"
+    shape_match: Match = "try_again"
+    needs_voice: bool = True
+    voice_ok: bool = False
+    # One or two representative mouth crops are enough for post-attempt review.
+    lip_image: str | None = None
+
+
+class LessonFeedbackRequest(BaseModel):
+    text: str = ""
+    kind: Literal["word", "sentence"] = "word"
+    transcript: str = ""
+    transcript_available: bool = False
+    overall: Match = "close"
+    steps: list[AttemptStepIn] = Field(default_factory=list)
+
+
+class LessonFeedbackResponse(BaseModel):
+    summary: str
+    maneuver: str
+    sound: str
+    stress: str
+    stress_status: Literal["on_target", "needs_work", "unavailable"] = "unavailable"
+    next_action: str
+    focus: FeedbackFocus
+    source: Literal["ollama", "heuristic"]
+    model: str | None = None
+    used_vision: bool = False
+
+
 def _strip_b64(image: str | None) -> str | None:
     if not image:
         return None
@@ -457,6 +523,267 @@ has_mouth_photo={has_vision}
 
 
 
+def _attempt_priority_step(req: LessonFeedbackRequest) -> AttemptStepIn | None:
+    if not req.steps:
+        return None
+
+    rank = {"try_again": 3, "close": 2, "good": 1}
+
+    def priority(step: AttemptStepIn) -> tuple[int, float]:
+        if not step.observed:
+            return (4, 1.0)
+        target = step.target
+        observed = step.observed
+        delta = max(
+            abs(target.openness - observed.openness),
+            abs(target.width - observed.width),
+            abs(target.roundness - observed.roundness),
+        )
+        return (rank.get(step.shape_match, 3), delta)
+
+    return max(req.steps, key=priority)
+
+
+def _attempt_maneuver(step: AttemptStepIn | None) -> str:
+    if not step or not step.observed:
+        return "Keep your face in view, then match the target mouth shape one sound at a time."
+
+    target = step.target
+    observed = step.observed
+    deltas = {
+        "open": target.openness - observed.openness,
+        "wide": target.width - observed.width,
+        "round": target.roundness - observed.roundness,
+    }
+    # Prefer the recorded error magnitudes when present.
+    if max(observed.openness_err, observed.width_err, observed.roundness_err) > 0.01:
+        err_map = {
+            "open": observed.openness_err * (1 if deltas["open"] >= 0 else -1),
+            "wide": observed.width_err * (1 if deltas["wide"] >= 0 else -1),
+            "round": observed.roundness_err * (1 if deltas["round"] >= 0 else -1),
+        }
+        dimension, signed = max(err_map.items(), key=lambda pair: abs(pair[1]))
+        delta = signed
+    else:
+        dimension, delta = max(deltas.items(), key=lambda pair: abs(pair[1]))
+
+    sound = step.speak_as or step.label or "this sound"
+
+    # Jaw / funnel can override when they dominate the miss.
+    if observed.jaw_open + 0.12 < target.openness and abs(delta) < 0.18:
+        return f"Drop your jaw a touch more for “{sound}” — keep the lips matching the green guide."
+    if observed.mouth_funnel + 0.15 < target.roundness and dimension == "round" and delta > 0:
+        return f"Purse and funnel the lips forward for “{sound}” — think a soft whistle shape."
+    if observed.smile + 0.2 < target.width and dimension == "wide" and delta > 0:
+        return f"Lift into a wider smile for “{sound}” — corners out, teeth lightly showing."
+
+    if abs(delta) < 0.06:
+        return f"Keep the mouth shape steady through “{sound}” — it is close to the target."
+    if dimension == "open":
+        return (
+            f"Open your jaw a little more for “{sound}”."
+            if delta > 0
+            else f"Close your jaw slightly sooner for “{sound}”."
+        )
+    if dimension == "wide":
+        return (
+            f"Pull the corners of your lips wider for “{sound}”."
+            if delta > 0
+            else f"Relax the corners slightly for “{sound}”."
+        )
+    return (
+        f"Round your lips forward a little more for “{sound}”."
+        if delta > 0
+        else f"Soften the lip roundness for “{sound}”."
+    )
+
+
+def _attempt_sound(req: LessonFeedbackRequest) -> str:
+    voiced_steps = [step for step in req.steps if step.needs_voice and step.voice_ok]
+    missing_steps = [step for step in req.steps if step.needs_voice and not step.voice_ok]
+    if not req.steps:
+        return "Say the word aloud so the microphone can confirm your voice."
+    if not missing_steps:
+        pitches = [
+            step.observed.pitch_hint
+            for step in voiced_steps
+            if step.observed and step.observed.pitch_hint > 0.05
+        ]
+        if pitches and sum(pitches) / len(pitches) < 0.18:
+            return "Voice was heard — try a slightly brighter pitch so the ending stays clear."
+        return (
+            "Your voice was present through the practice sounds — keep the ending audible."
+            if voiced_steps
+            else "This mouth shape does not need an audible voice check."
+        )
+    step = missing_steps[0]
+    sound = step.speak_as or step.label or "that sound"
+    vol = step.observed.volume if step.observed else 0.0
+    if vol > 0.03:
+        return f"“{sound}” was quiet — speak a little louder and hold it through the shape."
+    return f"Give “{sound}” a clear, steady voice so the microphone can hear it."
+
+
+def _attempt_stress(req: LessonFeedbackRequest) -> str:
+    sounds = [step.speak_as or step.label for step in req.steps if step.speak_as or step.label]
+    first = sounds[0] if sounds else "the first sound"
+    pitches = [
+        (step.speak_as or step.label or "sound", step.observed.pitch_hint)
+        for step in req.steps
+        if step.observed
+    ]
+    if len(pitches) >= 2:
+        lead = max(pitches, key=lambda pair: pair[1])
+        if lead[1] >= 0.28:
+            return (
+                f"Nice lift on “{lead[0]}” — keep that gentle lead, then let the rest settle."
+            )
+    if req.kind == "sentence":
+        return "Practice an even rhythm, then give the key word a little more time instead of more force."
+    return f"Practice the rhythm in beats: let “{first}” lead gently, then let the rest flow together."
+
+
+def _heuristic_lesson_feedback(req: LessonFeedbackRequest) -> LessonFeedbackResponse:
+    priority = _attempt_priority_step(req)
+    maneuver = _attempt_maneuver(priority)
+    sound = _attempt_sound(req)
+    stress = _attempt_stress(req)
+    if req.overall == "good":
+        summary = f"Strong work on “{req.text or 'that practice'}” — the local checks found a solid attempt."
+    elif req.overall == "close":
+        summary = f"You are close on “{req.text or 'that practice'}”. One focused adjustment will make the next try clearer."
+    else:
+        summary = f"Good effort on “{req.text or 'that practice'}”. Slow it down and focus on one sound at a time."
+
+    focus: FeedbackFocus
+    if priority and priority.needs_voice and not priority.voice_ok:
+        focus = "sound"
+    elif priority and priority.shape_match != "good":
+        focus = "maneuver"
+    else:
+        focus = "stress"
+    return LessonFeedbackResponse(
+        summary=summary,
+        maneuver=maneuver,
+        sound=sound,
+        stress=stress,
+        stress_status="unavailable",
+        next_action=maneuver,
+        focus=focus,
+        source="heuristic",
+        model=None,
+        used_vision=False,
+    )
+
+
+def _norm_focus(value: Any, fallback: FeedbackFocus) -> FeedbackFocus:
+    raw = str(value or "").strip().lower()
+    if "sound" in raw or "voice" in raw:
+        return "sound"
+    if "stress" in raw or "rhythm" in raw or "pace" in raw:
+        return "stress"
+    if "maneuver" in raw or "mouth" in raw or "lip" in raw or "shape" in raw:
+        return "maneuver"
+    return fallback
+
+
+async def _ollama_lesson_feedback(
+    req: LessonFeedbackRequest,
+    base: LessonFeedbackResponse,
+) -> LessonFeedbackResponse | None:
+    step_lines: list[str] = []
+    images: list[str] = []
+    for step in req.steps[:16]:
+        observed = step.observed.model_dump() if step.observed else None
+        step_lines.append(
+            f"{step.label or step.viseme} /{step.speak_as or step.viseme}/ "
+            f"target={step.target.model_dump()} observed={observed} "
+            f"local_match={step.local_match} shape_match={step.shape_match} "
+            f"needs_voice={step.needs_voice} voice_ok={step.voice_ok}"
+        )
+        image = _strip_b64(step.lip_image)
+        # Lip frames are normally tiny; ignore malformed/oversized payloads.
+        if image and len(image) <= 350_000 and not images:
+            images.append(image)
+
+    prompt = f"""You are Speak & See's local post-practice coach for a Deaf/HoH learner.
+Use ALL measured signals: target-versus-observed mouth geometry (open/wide/round),
+volume, pitch, smile, jaw, funnel, shape errors, voice evidence, transcript, and mouth photo when supplied.
+Return ONLY JSON:
+{{
+  "summary": "one encouraging sentence",
+  "maneuver": "one specific lip, jaw, smile, or funnel adjustment",
+  "sound": "one honest voice/sound cue based only on evidence",
+  "stress": "one practice cue for rhythm/emphasis/pitch lift",
+  "next_action": "one short next try instruction",
+  "focus": "maneuver|sound|stress"
+}}
+Rules:
+- The local scores and metrics are measurements; do not contradict them without a clear visual reason.
+- Prefer the largest openness/width/roundness error, then jaw/funnel/smile, then volume/pitch.
+- Do not claim to detect phoneme correctness or true vocal stress from these metrics alone.
+- Treat stress as a practice rhythm/emphasis cue grounded in pitch/volume patterns when present.
+- Name at most one priority adjustment and be encouraging, concrete, and brief.
+
+text={req.text!r}
+kind={req.kind}
+transcript_available={req.transcript_available}
+transcript={req.transcript!r}
+overall_local_score={req.overall}
+steps:
+{chr(10).join(step_lines) if step_lines else "(no sampled steps)"}
+has_mouth_photo={bool(images)}
+"""
+    user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if images:
+        user_msg["images"] = images
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {"temperature": 0.15, "num_predict": 240},
+        "messages": [
+            {
+                "role": "system",
+                "content": "Speech-practice recap. JSON only. Ground every claim in supplied evidence.",
+            },
+            user_msg,
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=32.0) as client:
+            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            res.raise_for_status()
+            parsed = _extract_json(res.json().get("message", {}).get("content", ""))
+            if not parsed:
+                return None
+            # Keep the observable facts deterministic. The model is best used
+            # for warm, concise wording and visual refinement—not for claiming
+            # a sound-quality or stress measurement we did not collect.
+            maneuver = (
+                _norm_cue(parsed.get("maneuver"), base.maneuver)
+                if images and base.focus == "maneuver"
+                else base.maneuver
+            )
+            return LessonFeedbackResponse(
+                summary=_norm_summary(parsed.get("summary"), base.summary),
+                maneuver=maneuver,
+                sound=base.sound,
+                stress=_norm_cue(parsed.get("stress"), base.stress),
+                # There is no reliable stress metric yet; retain the server's
+                # authoritative status even when the model improves wording.
+                stress_status=base.stress_status,
+                next_action=maneuver,
+                focus=base.focus,
+                source="ollama",
+                model=OLLAMA_MODEL,
+                used_vision=bool(images),
+            )
+    except Exception:
+        return None
+
+
 class LessonRequest(BaseModel):
     text: str = ""
     kind: Literal["word", "sentence"] = "word"
@@ -634,7 +961,9 @@ async def root() -> dict[str, Any]:
         "wake": "/wake",
         "analyze": "POST /analyze",
         "lesson": "POST /lesson",
+        "lesson_feedback": "POST /lesson-feedback",
         "session_lessons": "POST /session-lessons",
+        "therapy_plan": "POST /therapy-plan",
         "model": OLLAMA_MODEL,
         "vision": True,
     }
@@ -705,6 +1034,14 @@ async def wake() -> dict[str, Any]:
 async def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
     base = _heuristic(req)
     refined = await _ollama_refine(req, base)
+    return refined or base
+
+
+@app.post("/lesson-feedback", response_model=LessonFeedbackResponse)
+async def lesson_feedback(req: LessonFeedbackRequest) -> LessonFeedbackResponse:
+    """Turn a completed local lesson score into one clear, grounded recap."""
+    base = _heuristic_lesson_feedback(req)
+    refined = await _ollama_lesson_feedback(req, base)
     return refined or base
 
 
@@ -965,3 +1302,189 @@ async def session_lessons(req: SessionLessonsRequest) -> SessionLessonsResponseE
     """Build word-by-word practice lessons from a Live Guide recording (Gemma)."""
     refined = await _ollama_session_lessons(req)
     return refined or _heuristic_session_lessons(req)
+
+
+# ── SLP SIMPLE therapy plan (Speechy Musings–style worksheet fill) ──
+
+
+class TherapyVocabIn(BaseModel):
+    core: list[str] = Field(default_factory=list)
+    basic_concepts: list[str] = Field(default_factory=list)
+    describing: list[str] = Field(default_factory=list)
+    tier_2: list[str] = Field(default_factory=list)
+    other: list[str] = Field(default_factory=list)
+
+
+class TherapyPlanRequest(BaseModel):
+    topic: str = ""
+    targets: list[str] = Field(default_factory=list)
+    schedule: list[str] = Field(default_factory=list)
+    weak_phonemes: list[str] = Field(default_factory=list)
+    assigned_words: list[str] = Field(default_factory=list)
+    activities_have: str = ""
+    activities_need: str = ""
+    vocab: TherapyVocabIn = Field(default_factory=TherapyVocabIn)
+
+
+class TherapyVocabOut(BaseModel):
+    core: list[str] = Field(default_factory=list)
+    basicConcepts: list[str] = Field(default_factory=list)
+    describing: list[str] = Field(default_factory=list)
+    tier2: list[str] = Field(default_factory=list)
+    other: list[str] = Field(default_factory=list)
+
+
+class TherapyPlanResponse(BaseModel):
+    activities_have: str
+    activities_need: str
+    vocab: TherapyVocabOut
+    generated_note: str
+    source: Literal["ollama", "heuristic"]
+    model: str | None = None
+
+
+def _str_list(value: Any, limit: int = 10) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _heuristic_therapy_plan(req: TherapyPlanRequest) -> TherapyPlanResponse:
+    theme = (req.topic or "").strip() or "this week's theme"
+    targets = ", ".join(req.targets) if req.targets else "articulation + language goals"
+    weak = ", ".join(req.weak_phonemes[:3]) if req.weak_phonemes else "target sounds"
+    assigned = ", ".join(req.assigned_words[:6]) if req.assigned_words else "practice words"
+    first = theme.split()[0] if theme.split() else "theme"
+
+    have = (req.activities_have or "").strip() or (
+        f"Picture cards for {theme}; mirror for mouth shapes; assigned words: {assigned}."
+    )
+    need = (req.activities_need or "").strip() or (
+        f"One book or short video on {theme}; sticky notes for {weak}; timer for drill + fun wrap."
+    )
+
+    v = req.vocab
+    vocab = TherapyVocabOut(
+        core=_str_list(v.core) or ["want", "more", "look", "help"],
+        basicConcepts=_str_list(v.basic_concepts) or ["big", "little", "same", "different"],
+        describing=_str_list(v.describing) or [first, "color", "size", "feel"],
+        tier2=_str_list(v.tier_2) or ["observe", "compare", "explain"],
+        other=_str_list(v.other) or ["and", "because", "then"],
+    )
+
+    return TherapyPlanResponse(
+        activities_have=have,
+        activities_need=need,
+        vocab=vocab,
+        generated_note=(
+            f"Quick plan for {theme}: keep {targets} front and center; "
+            f"warm up, teach, practice {weak}, then fun."
+        ),
+        source="heuristic",
+        model=None,
+    )
+
+
+async def _ollama_therapy_plan(
+    req: TherapyPlanRequest, base: TherapyPlanResponse
+) -> TherapyPlanResponse | None:
+    prompt = f"""You are Speak & See — helping a speech-language pathologist fill a SIMPLE session worksheet.
+Return ONLY valid JSON with these keys:
+activities_have: one short paragraph of materials already on hand
+activities_need: one short paragraph of gaps / materials still needed
+vocab: object with arrays core, basic_concepts, describing, tier_2, other (3–6 short words each)
+generated_note: 1–2 encouraging sentences summarizing the session rhythm
+
+Respect the SLP's chips — expand activities and vocab around them. Do not invent medical claims.
+Keep language warm, concrete, and classroom-ready.
+
+topic={req.topic!r}
+targets={req.targets}
+schedule={req.schedule}
+weak_phonemes={req.weak_phonemes}
+assigned_words={req.assigned_words}
+activities_have_draft={req.activities_have!r}
+activities_need_draft={req.activities_need!r}
+vocab_draft={req.vocab.model_dump()}
+heuristic_guess={base.model_dump(exclude={{"source", "model"}})}
+"""
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0.25,
+            "num_predict": 280,
+        },
+        "messages": [
+            {
+                "role": "system",
+                "content": "Speak & See SLP planner. Output JSON only. Be brief and practical.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            res.raise_for_status()
+            data = res.json()
+            content = data.get("message", {}).get("content", "")
+            parsed = _extract_json(content)
+            if not parsed:
+                return None
+
+            vocab_raw = parsed.get("vocab") if isinstance(parsed.get("vocab"), dict) else {}
+            core = _str_list(vocab_raw.get("core") or vocab_raw.get("coreVocabulary"))
+            basic = _str_list(
+                vocab_raw.get("basic_concepts")
+                or vocab_raw.get("basicConcepts")
+                or vocab_raw.get("basic")
+            )
+            describing = _str_list(vocab_raw.get("describing") or vocab_raw.get("describe"))
+            tier2 = _str_list(
+                vocab_raw.get("tier_2") or vocab_raw.get("tier2") or vocab_raw.get("tierTwo")
+            )
+            other = _str_list(vocab_raw.get("other") or vocab_raw.get("other_targets"))
+
+            have = _norm_summary(parsed.get("activities_have") or parsed.get("activitiesHave"), base.activities_have)
+            need = _norm_summary(parsed.get("activities_need") or parsed.get("activitiesNeed"), base.activities_need)
+            note = _norm_summary(
+                parsed.get("generated_note") or parsed.get("generatedNote"),
+                base.generated_note,
+            )
+
+            return TherapyPlanResponse(
+                activities_have=have,
+                activities_need=need,
+                vocab=TherapyVocabOut(
+                    core=core or base.vocab.core,
+                    basicConcepts=basic or base.vocab.basicConcepts,
+                    describing=describing or base.vocab.describing,
+                    tier2=tier2 or base.vocab.tier2,
+                    other=other or base.vocab.other,
+                ),
+                generated_note=note,
+                source="ollama",
+                model=OLLAMA_MODEL,
+            )
+    except Exception:
+        return None
+
+
+@app.post("/therapy-plan", response_model=TherapyPlanResponse)
+async def therapy_plan(req: TherapyPlanRequest) -> TherapyPlanResponse:
+    """Fill a Speechy Musings–style SIMPLE worksheet from SLP chips + weak sounds."""
+    base = _heuristic_therapy_plan(req)
+    refined = await _ollama_therapy_plan(req, base)
+    return refined or base

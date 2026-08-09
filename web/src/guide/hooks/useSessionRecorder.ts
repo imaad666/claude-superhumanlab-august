@@ -7,6 +7,8 @@ import type { TranscriptWord } from "../types";
 
 type RecorderInput = {
   active: boolean;
+  /** Shared clock origin for browser transcript, lip samples, and A/V. */
+  startedAt?: number | null;
   stream: MediaStream | null;
   lips: LipFeatures;
   volume: number;
@@ -17,6 +19,8 @@ type RecorderInput = {
   transcript: string;
   recentWords: string[];
   words: TranscriptWord[];
+  /** Lets the owner release the camera only after MediaRecorder has flushed. */
+  onCaptureComplete?: () => void;
   /** How often to sample metrics / lip vectors (ms). */
   sampleEveryMs?: number;
 };
@@ -52,15 +56,23 @@ export function useSessionRecorder(input: RecorderInput) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [sampleCount, setSampleCount] = useState(0);
   const [session, setSession] = useState<GuideSession | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   const samplesRef = useRef<SessionSample[]>([]);
   const startedAtRef = useRef<number | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const mediaUrlRef = useRef<string | null>(null);
+  const mediaStartedAtRef = useRef<number | null>(null);
   const inputRef = useRef(input);
   inputRef.current = input;
   const stoppingRef = useRef(false);
+  const finalizedRef = useRef(false);
+  const finishRef = useRef<(
+    url: string | null,
+    blob?: Blob | null,
+    mimeType?: string | null,
+  ) => void>(() => undefined);
 
   const clearMediaUrl = useCallback(() => {
     if (mediaUrlRef.current) {
@@ -74,13 +86,52 @@ export function useSessionRecorder(input: RecorderInput) {
     if (!active) return;
 
     stoppingRef.current = false;
+    finalizedRef.current = false;
     clearMediaUrl();
     samplesRef.current = [];
     chunksRef.current = [];
-    startedAtRef.current = Date.now();
+    startedAtRef.current = inputRef.current.startedAt ?? Date.now();
+    mediaStartedAtRef.current = null;
     setElapsedMs(0);
     setSampleCount(0);
     setSession(null);
+    setStopping(false);
+
+    const finish = (
+      url: string | null,
+      blob: Blob | null = null,
+      mimeType: string | null = null,
+    ) => {
+      if (finalizedRef.current) return;
+      finalizedRef.current = true;
+      const startedAt = startedAtRef.current ?? Date.now();
+      const endedAt = Date.now();
+      const samples = [...samplesRef.current];
+      const finalWords = [...inputRef.current.words];
+      const transcript = inputRef.current.transcript.trim();
+      const mediaStartedAt = mediaStartedAtRef.current ?? startedAt;
+
+      setSession({
+        id: `live-${startedAt}`,
+        startedAt,
+        endedAt,
+        durationMs: endedAt - startedAt,
+        mediaStartOffsetMs: Math.max(0, mediaStartedAt - startedAt),
+        samples,
+        words: finalWords,
+        transcript,
+        transcriptSource: transcript ? "live-browser" : "none",
+        mediaUrl: url,
+        mediaBlob: blob,
+        mediaMimeType: mimeType,
+      });
+      setSampleCount(samples.length);
+      setElapsedMs(endedAt - startedAt);
+      setStopping(false);
+      startedAtRef.current = null;
+      inputRef.current.onCaptureComplete?.();
+    };
+    finishRef.current = finish;
 
     const tick = window.setInterval(() => {
       if (startedAtRef.current != null) {
@@ -90,45 +141,12 @@ export function useSessionRecorder(input: RecorderInput) {
 
     return () => {
       window.clearInterval(tick);
+      if (finalizedRef.current) return;
       stoppingRef.current = true;
-      const startedAt = startedAtRef.current ?? Date.now();
-      const endedAt = Date.now();
-      const samples = [...samplesRef.current];
-      const finalWords = [...inputRef.current.words];
-
-      const finish = (url: string | null) => {
-        setSession({
-          id: `live-${startedAt}`,
-          startedAt,
-          endedAt,
-          durationMs: endedAt - startedAt,
-          samples,
-          words: finalWords,
-          mediaUrl: url,
-        });
-        setSampleCount(samples.length);
-        setElapsedMs(endedAt - startedAt);
-        startedAtRef.current = null;
-      };
-
-      const rec = mediaRef.current;
-      mediaRef.current = null;
-
-      if (rec && rec.state !== "inactive") {
-        rec.onstop = () => {
-          clearMediaUrl();
-          const blob = new Blob(chunksRef.current, {
-            type: rec.mimeType || "video/webm",
-          });
-          let mediaUrl: string | null = null;
-          if (blob.size > 0) {
-            mediaUrl = URL.createObjectURL(blob);
-            mediaUrlRef.current = mediaUrl;
-          }
-          finish(mediaUrl);
-        };
+      const recorder = mediaRef.current;
+      if (recorder && recorder.state !== "inactive") {
         try {
-          rec.stop();
+          recorder.stop();
         } catch {
           finish(null);
         }
@@ -153,6 +171,26 @@ export function useSessionRecorder(input: RecorderInput) {
       recorder.ondataavailable = (ev) => {
         if (ev.data.size > 0) chunksRef.current.push(ev.data);
       };
+      recorder.onstart = () => {
+        mediaStartedAtRef.current = Date.now();
+      };
+      recorder.onstop = () => {
+        clearMediaUrl();
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || "video/webm",
+        });
+        let mediaUrl: string | null = null;
+        if (blob.size > 0) {
+          mediaUrl = URL.createObjectURL(blob);
+          mediaUrlRef.current = mediaUrl;
+        }
+        if (mediaRef.current === recorder) mediaRef.current = null;
+        finishRef.current(
+          mediaUrl,
+          blob.size > 0 ? blob : null,
+          recorder.mimeType || null,
+        );
+      };
       recorder.start(1000);
     } catch {
       mediaRef.current = null;
@@ -161,7 +199,7 @@ export function useSessionRecorder(input: RecorderInput) {
     return () => {
       /* stop handled by active-effect cleanup */
     };
-  }, [active, stream]);
+  }, [active, stream, clearMediaUrl]);
 
   // Sample metrics while recording
   useEffect(() => {
@@ -217,16 +255,35 @@ export function useSessionRecorder(input: RecorderInput) {
   const discard = useCallback(() => {
     clearMediaUrl();
     samplesRef.current = [];
+    mediaStartedAtRef.current = null;
     setSession(null);
     setSampleCount(0);
     setElapsedMs(0);
   }, [clearMediaUrl]);
 
+  const stop = useCallback(() => {
+    if (!active || stoppingRef.current) return;
+    stoppingRef.current = true;
+    setStopping(true);
+    const recorder = mediaRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      try {
+        recorder.stop();
+      } catch {
+        finishRef.current(null);
+      }
+      return;
+    }
+    finishRef.current(null);
+  }, [active]);
+
   return {
     recording: active,
+    stopping,
     elapsedMs,
     sampleCount,
     session,
+    stop,
     discard,
   };
 }

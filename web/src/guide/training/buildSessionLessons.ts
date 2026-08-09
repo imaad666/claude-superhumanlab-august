@@ -70,20 +70,26 @@ type ApiSessionLessons = {
 function uniqueWords(session: GuideSession): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const w of session.words) {
-    const clean = w.text.replace(/[^a-zA-Z']/g, "").toLowerCase();
-    if (!clean || seen.has(clean)) continue;
+  const push = (raw: string) => {
+    const clean = raw.replace(/[^a-zA-Z']/g, "").toLowerCase();
+    if (!clean || clean.length < 2 || seen.has(clean)) return;
     seen.add(clean);
     out.push(clean);
+  };
+
+  for (const w of session.words) push(w.text);
+
+  if (!out.length && session.transcript.trim()) {
+    for (const part of session.transcript.split(/\s+/)) push(part);
   }
+
   if (!out.length) {
-    for (const part of session.samples.at(-1)?.transcript.split(/\s+/) ?? []) {
-      const clean = part.replace(/[^a-zA-Z']/g, "").toLowerCase();
-      if (!clean || seen.has(clean)) continue;
-      seen.add(clean);
-      out.push(clean);
+    for (const sample of session.samples) {
+      for (const part of sample.transcript.split(/\s+/)) push(part);
+      for (const part of sample.recentWords) push(part);
     }
   }
+
   return out.slice(0, 12);
 }
 
@@ -217,7 +223,25 @@ export async function buildSessionLessons(
 ): Promise<{ lessons: LessonMemory[]; source: "ollama" | "heuristic"; tip: string }> {
   const words = uniqueWords(session);
   if (!words.length) {
-    throw new Error("No words transcribed — record again with speech.");
+    // Still build from lip motion peaks when STT caught nothing — one generic lesson.
+    const peak = [...session.samples]
+      .filter((s) => s.landmarks)
+      .sort(
+        (a, b) =>
+          b.volume + b.lips.openness - (a.volume + a.lips.openness),
+      )[0];
+    if (!peak) {
+      throw new Error(
+        "No words transcribed and no lip tracks — record again facing the camera, speak clearly, then stop.",
+      );
+    }
+    const lesson = heuristicWordLesson("practice", session);
+    saveCapturedLessons([lesson]);
+    return {
+      lessons: [lesson],
+      source: "heuristic",
+      tip: "No transcript this take — saved a generic practice lesson from lip motion. Allow mic speech recognition for word-by-word lessons.",
+    };
   }
 
   const sampleSummaries = session.samples.slice(0, 48).map((s, i) => ({

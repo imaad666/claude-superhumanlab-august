@@ -1,11 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { GeneratingSplat } from "../guide/components/GeneratingSplat";
 import { assignableWords } from "../guide/training/bank";
+import {
+  applyGeneratedPlan,
+  generateTherapyPlan,
+} from "./generateTherapyPlan";
 import {
   CURRICULUM,
   PLAN_SCHEDULE_OPTIONS,
   PLAN_TARGET_OPTIONS,
+  PLAN_VOCAB_CHIPS,
+  PLAN_VOCAB_LABELS,
 } from "./lessonPlans";
+import {
+  SPEECH_ALPHABET,
+  soundFullySelected,
+  toggleSoundWords,
+  wordsForSound,
+  type SpeechSoundCell,
+} from "./speechAlphabet";
 import { autoAssign, computePhonemeStats, sessionTrend } from "./stats";
 import {
   getAssignedSet,
@@ -16,7 +30,12 @@ import {
   setPlan,
   SLP_EVENT,
 } from "./store";
-import type { PhonemeStats, TherapyPlan } from "./types";
+import type {
+  PhonemeStats,
+  TherapyPlan,
+  TherapyVocabKey,
+} from "./types";
+import { EMPTY_VOCAB } from "./types";
 import "./SlpDashboard.css";
 
 const EMPTY_PLAN: TherapyPlan = {
@@ -25,6 +44,7 @@ const EMPTY_PLAN: TherapyPlan = {
   schedule: [],
   activitiesHave: "",
   activitiesNeed: "",
+  vocab: { ...EMPTY_VOCAB },
   updatedAt: 0,
 };
 
@@ -40,11 +60,10 @@ function sameWords(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((w, i) => w === b[i]);
 }
 
-/** Tiny inline trend line — overall accuracy per session, oldest → newest. */
 function TrendLine({ points }: { points: number[] }) {
-  const W = 220;
-  const H = 56;
-  const pad = 6;
+  const W = 280;
+  const H = 64;
+  const pad = 8;
   if (points.length === 0) return null;
   const span = points.length > 1 ? points.length - 1 : 1;
   const coords = points.map((v, i) => {
@@ -55,14 +74,36 @@ function TrendLine({ points }: { points: number[] }) {
   const path = coords.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(" ");
   const last = coords[coords.length - 1];
   return (
-    <svg className="slp-trend" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Accuracy over sessions">
-      <line x1={pad} y1={H - pad - (0.7 * (H - pad * 2))} x2={W - pad} y2={H - pad - (0.7 * (H - pad * 2))} className="slp-trend-grid" />
+    <svg
+      className="slp-trend"
+      viewBox={`0 0 ${W} ${H}`}
+      role="img"
+      aria-label="Accuracy over sessions"
+    >
+      <line
+        x1={pad}
+        y1={H - pad - 0.7 * (H - pad * 2)}
+        x2={W - pad}
+        y2={H - pad - 0.7 * (H - pad * 2)}
+        className="slp-trend-grid"
+      />
       {points.length > 1 && <path d={path} className="slp-trend-path" fill="none" />}
       {coords.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i === coords.length - 1 ? 3.5 : 2} className="slp-trend-dot" />
+        <circle
+          key={i}
+          cx={x}
+          cy={y}
+          r={i === coords.length - 1 ? 3.5 : 2}
+          className="slp-trend-dot"
+        />
       ))}
       {last && (
-        <text x={last[0]} y={Math.max(12, last[1] - 8)} textAnchor="end" className="slp-trend-label">
+        <text
+          x={last[0]}
+          y={Math.max(12, last[1] - 8)}
+          textAnchor="end"
+          className="slp-trend-label"
+        >
           {points[points.length - 1]}
         </text>
       )}
@@ -91,18 +132,22 @@ function PhonemeBars({ stats }: { stats: PhonemeStats[] }) {
   );
 }
 
-/** Year-long-style curriculum overview — practice items launch a lesson. */
 function Curriculum({ onPractice }: { onPractice: (word: string) => void }) {
   return (
     <div className="slp-curriculum">
       {CURRICULUM.map((cat) => (
         <div key={cat.id} className="slp-curr-cat">
-          <p className="slp-curr-cat-title">{cat.title}</p>
-          <div className="slp-curr-items">
-            {cat.items.map((item) =>
-              item.status === "practice" ? (
-                <div key={item.label} className="slp-curr-item is-practice">
-                  <span className="slp-curr-item-label">{item.label}</span>
+          <h3 className="slp-curr-cat-title">{cat.title}</h3>
+          <ul className="slp-curr-items">
+            {cat.items.map((item) => (
+              <li
+                key={item.label}
+                className={`slp-curr-item ${
+                  item.status === "practice" ? "is-practice" : "is-roadmap"
+                }`}
+              >
+                <span className="slp-curr-item-label">{item.label}</span>
+                {item.status === "practice" ? (
                   <span className="slp-curr-item-words">
                     {item.words?.map((w) => (
                       <button
@@ -115,28 +160,88 @@ function Curriculum({ onPractice }: { onPractice: (word: string) => void }) {
                       </button>
                     ))}
                   </span>
-                </div>
-              ) : (
-                <span key={item.label} className="slp-curr-item is-roadmap">
-                  {item.label}
-                  <span className="slp-curr-roadmap-tag">roadmap</span>
-                </span>
-              ),
-            )}
-          </div>
+                ) : (
+                  <span className="slp-curr-roadmap-tag">later</span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       ))}
     </div>
   );
 }
 
-/** SLP's single-plan session worksheet — autosaves to localStorage. */
-function PlanForm({
+function SpeechAlphabet({
+  selected,
+  phonemeScore,
+  onToggleSound,
+}: {
+  selected: string[];
+  phonemeScore: (phoneme: string) => number | undefined;
+  onToggleSound: (cell: SpeechSoundCell) => void;
+}) {
+  return (
+    <div className="slp-alphabet" role="group" aria-label="Speech alphabet">
+      {SPEECH_ALPHABET.map((cell) => {
+        const practice = cell.status === "practice";
+        const words = wordsForSound(cell);
+        const on = practice && soundFullySelected(cell, selected);
+        const score = cell.phonemes
+          .map((p) => phonemeScore(p))
+          .find((s) => s != null);
+        return (
+          <button
+            key={cell.id}
+            type="button"
+            className={`slp-alpha-cell ${practice ? "is-practice" : "is-roadmap"} ${
+              on ? "is-on" : ""
+            }`}
+            disabled={!practice}
+            aria-pressed={practice ? on : undefined}
+            title={
+              practice
+                ? `${cell.label} · ${words.join(", ")}`
+                : `${cell.label} · later`
+            }
+            onClick={() => practice && onToggleSound(cell)}
+          >
+            <span className="slp-alpha-ipa">/{cell.ipa}/</span>
+            <span className="slp-alpha-label">{cell.label}</span>
+            <span className="slp-alpha-meta">
+              {practice
+                ? score != null
+                  ? `${score}`
+                  : `${words.length}w`
+                : "later"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const VOCAB_KEYS: TherapyVocabKey[] = [
+  "core",
+  "basicConcepts",
+  "describing",
+  "tier2",
+  "other",
+];
+
+function PlanWorksheet({
   plan,
   onChange,
+  generating,
+  generateError,
+  onGenerate,
 }: {
   plan: TherapyPlan;
   onChange: (next: TherapyPlan) => void;
+  generating: boolean;
+  generateError: string | null;
+  onGenerate: () => void;
 }) {
   const update = (patch: Partial<TherapyPlan>) =>
     onChange({ ...plan, ...patch, updatedAt: Date.now() });
@@ -150,74 +255,201 @@ function PlanForm({
     } as Partial<TherapyPlan>);
   };
 
+  const toggleVocab = (bucket: TherapyVocabKey, word: string) => {
+    const set = plan.vocab[bucket];
+    update({
+      vocab: {
+        ...plan.vocab,
+        [bucket]: set.includes(word)
+          ? set.filter((v) => v !== word)
+          : [...set, word],
+      },
+    });
+  };
+
   return (
-    <div className="slp-plan-form">
-      <label className="slp-plan-field">
-        <span className="slp-plan-label">Topic / theme</span>
-        <input
-          className="slp-plan-input"
-          type="text"
-          placeholder="e.g. Outer space — planets, stars, astronauts"
-          value={plan.topic}
-          onChange={(e) => update({ topic: e.target.value })}
-        />
-      </label>
-
-      <div className="slp-plan-field">
-        <span className="slp-plan-label">Targets</span>
-        <div className="slp-plan-chips">
-          {PLAN_TARGET_OPTIONS.map((t) => (
-            <button
-              key={t}
-              type="button"
-              aria-pressed={plan.targets.includes(t)}
-              className={`slp-plan-chip ${plan.targets.includes(t) ? "is-on" : ""}`}
-              onClick={() => toggle("targets", t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+    <div className="slp-worksheet">
+      <div className="slp-worksheet-actions">
+        <button
+          type="button"
+          className="btn btn-accent"
+          disabled={generating}
+          onClick={onGenerate}
+        >
+          {generating ? "Generating…" : "Generate plan"}
+        </button>
+        <p className="slp-note">
+          Gemma expands activities + vocab from your chips. Targets and schedule
+          stay yours.
+        </p>
       </div>
 
-      <div className="slp-plan-field">
-        <span className="slp-plan-label">Schedule</span>
-        <div className="slp-plan-chips">
-          {PLAN_SCHEDULE_OPTIONS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={plan.schedule.includes(s)}
-              className={`slp-plan-chip ${plan.schedule.includes(s) ? "is-on" : ""}`}
-              onClick={() => toggle("schedule", s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <label className="slp-plan-field">
-        <span className="slp-plan-label">Activities you already have</span>
-        <textarea
-          className="slp-plan-textarea"
-          rows={2}
-          placeholder="What do you already own that pairs with this theme?"
-          value={plan.activitiesHave}
-          onChange={(e) => update({ activitiesHave: e.target.value })}
+      {generating && (
+        <GeneratingSplat
+          label="Building your SIMPLE plan…"
+          detail="Theme, materials, and vocabulary buckets — usually under half a minute."
         />
-      </label>
+      )}
 
-      <label className="slp-plan-field">
-        <span className="slp-plan-label">Activities you still need</span>
-        <textarea
-          className="slp-plan-textarea"
-          rows={2}
-          placeholder="What gaps do you need to fill?"
-          value={plan.activitiesNeed}
-          onChange={(e) => update({ activitiesNeed: e.target.value })}
-        />
-      </label>
+      {generateError && !generating && (
+        <p className="slp-gen-error">{generateError}</p>
+      )}
+
+      {plan.generatedNote && !generating && (
+        <p className="slp-gen-note">{plan.generatedNote}</p>
+      )}
+
+      <ol className="slp-simple-steps">
+        <li className="slp-simple-step">
+          <div className="slp-simple-head">
+            <span className="slp-simple-num">1</span>
+            <div>
+              <h3>Therapy topic / theme / book</h3>
+              <p className="slp-note">Foundation for the session.</p>
+            </div>
+          </div>
+          <input
+            className="slp-plan-input"
+            type="text"
+            placeholder="e.g. Outer space"
+            value={plan.topic}
+            disabled={generating}
+            onChange={(e) => update({ topic: e.target.value })}
+          />
+        </li>
+
+        <li className="slp-simple-step">
+          <div className="slp-simple-head">
+            <span className="slp-simple-num">2</span>
+            <div>
+              <h3>Lesson plan targets</h3>
+              <p className="slp-note">Goals to cover this week.</p>
+            </div>
+          </div>
+          <div className="slp-plan-chips">
+            {PLAN_TARGET_OPTIONS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={plan.targets.includes(t)}
+                className={`slp-plan-chip ${plan.targets.includes(t) ? "is-on" : ""}`}
+                disabled={generating}
+                onClick={() => toggle("targets", t)}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </li>
+
+        <li className="slp-simple-step">
+          <div className="slp-simple-head">
+            <span className="slp-simple-num">3</span>
+            <div>
+              <h3>Schedule</h3>
+              <p className="slp-note">Routine students can expect.</p>
+            </div>
+          </div>
+          <div className="slp-plan-chips">
+            {PLAN_SCHEDULE_OPTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={plan.schedule.includes(s)}
+                className={`slp-plan-chip ${plan.schedule.includes(s) ? "is-on" : ""}`}
+                disabled={generating}
+                onClick={() => toggle("schedule", s)}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </li>
+
+        <li className="slp-simple-step">
+          <div className="slp-simple-head">
+            <span className="slp-simple-num">4</span>
+            <div>
+              <h3>Activities & materials</h3>
+              <p className="slp-note">Goal-centric first — then the fun.</p>
+            </div>
+          </div>
+          <div className="slp-plan-pair">
+            <label className="slp-plan-field">
+              <span className="slp-plan-label">Already have</span>
+              <textarea
+                className="slp-plan-textarea"
+                rows={3}
+                placeholder="Materials on hand…"
+                value={plan.activitiesHave}
+                disabled={generating}
+                onChange={(e) => update({ activitiesHave: e.target.value })}
+              />
+            </label>
+            <label className="slp-plan-field">
+              <span className="slp-plan-label">Still need</span>
+              <textarea
+                className="slp-plan-textarea"
+                rows={3}
+                placeholder="Gaps to fill…"
+                value={plan.activitiesNeed}
+                disabled={generating}
+                onChange={(e) => update({ activitiesNeed: e.target.value })}
+              />
+            </label>
+          </div>
+        </li>
+
+        <li className="slp-simple-step">
+          <div className="slp-simple-head">
+            <span className="slp-simple-num">5</span>
+            <div>
+              <h3>Target vocabulary</h3>
+              <p className="slp-note">
+                Core, concepts, describing, tier 2, and other targets.
+              </p>
+            </div>
+          </div>
+          <div className="slp-vocab-grid">
+            {VOCAB_KEYS.map((key) => (
+              <div key={key} className="slp-vocab-bucket">
+                <span className="slp-plan-label">{PLAN_VOCAB_LABELS[key]}</span>
+                <div className="slp-plan-chips">
+                  {PLAN_VOCAB_CHIPS[key].map((word) => {
+                    const on = plan.vocab[key].includes(word);
+                    return (
+                      <button
+                        key={word}
+                        type="button"
+                        aria-pressed={on}
+                        className={`slp-plan-chip ${on ? "is-on" : ""}`}
+                        disabled={generating}
+                        onClick={() => toggleVocab(key, word)}
+                      >
+                        {word}
+                      </button>
+                    );
+                  })}
+                  {plan.vocab[key]
+                    .filter((w) => !PLAN_VOCAB_CHIPS[key].includes(w))
+                    .map((word) => (
+                      <button
+                        key={word}
+                        type="button"
+                        aria-pressed
+                        className="slp-plan-chip is-on"
+                        disabled={generating}
+                        onClick={() => toggleVocab(key, word)}
+                      >
+                        {word}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </li>
+      </ol>
     </div>
   );
 }
@@ -227,8 +459,9 @@ export function SlpDashboard() {
   const [view, setView] = useState<View>("learner");
   const [tick, setTick] = useState(0);
   const [draft, setDraft] = useState<string[] | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
 
-  // Refresh when progress changes (e.g. returning from a practice session).
   useEffect(() => {
     const bump = () => setTick((t) => t + 1);
     window.addEventListener(SLP_EVENT, bump);
@@ -252,14 +485,19 @@ export function SlpDashboard() {
     [stored, sessions],
   );
 
-  const [plan, setPlanState] = useState<TherapyPlan>(() => getPlan() ?? EMPTY_PLAN);
+  const [plan, setPlanState] = useState<TherapyPlan>(
+    () => getPlan() ?? EMPTY_PLAN,
+  );
   const updatePlan = useCallback((next: TherapyPlan) => {
-    setPlanState(next);
-    setPlan(next);
+    const normalized: TherapyPlan = {
+      ...EMPTY_PLAN,
+      ...next,
+      vocab: { ...EMPTY_VOCAB, ...(next.vocab ?? {}) },
+    };
+    setPlanState(normalized);
+    setPlan(normalized);
   }, []);
 
-  // Persist the algorithm's pick so the trainer/picker see it — unless a human
-  // SLP has taken the wheel, in which case auto-assignment stays quiet.
   useEffect(() => {
     if (stored?.assignedBy === "SLP") return;
     const auto = autoAssign(getSessions());
@@ -313,6 +551,11 @@ export function SlpDashboard() {
     );
   };
 
+  const onToggleSound = (cell: SpeechSoundCell) => {
+    const base = draft ?? effective.words;
+    setDraft(toggleSoundWords(cell, base));
+  };
+
   const assignAsSlp = () => {
     setAssignedSet({ words: selected, assignedBy: "SLP" });
     setDraft(null);
@@ -322,16 +565,45 @@ export function SlpDashboard() {
     setDraft(null);
   };
 
+  const onGeneratePlan = useCallback(async () => {
+    if (generating) return;
+    setGenerating(true);
+    setGenerateError(null);
+    try {
+      const result = await generateTherapyPlan({
+        topic: plan.topic,
+        targets: plan.targets,
+        schedule: plan.schedule,
+        weakPhonemes: stats.slice(0, 4).map((s) => s.phoneme),
+        assignedWords: selected,
+        activitiesHave: plan.activitiesHave,
+        activitiesNeed: plan.activitiesNeed,
+        vocab: plan.vocab,
+      });
+      updatePlan(applyGeneratedPlan(plan, result));
+    } catch (err) {
+      setGenerateError(
+        err instanceof Error ? err.message : "Could not generate the plan",
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }, [generating, plan, selected, stats, updatePlan]);
+
   const hasData = totals.attempts > 0;
   const weakest = stats.slice(0, 3);
 
   return (
-    <main className="slp">
+    <main className={`slp ${view === "slp" ? "is-slp" : "is-learner"}`}>
       <header className="slp-top">
         <Link className="back" to="/">
           ← Speak &amp; See
         </Link>
-        <div className="slp-viewswitch" role="tablist" aria-label="Who's using this">
+        <div
+          className="slp-viewswitch"
+          role="tablist"
+          aria-label="Who's using this"
+        >
           <button
             type="button"
             role="tab"
@@ -342,7 +614,7 @@ export function SlpDashboard() {
               setDraft(null);
             }}
           >
-            I’m practising
+            Practicing
           </button>
           <button
             type="button"
@@ -351,110 +623,68 @@ export function SlpDashboard() {
             className={`slp-view-chip ${view === "slp" ? "is-active" : ""}`}
             onClick={() => setView("slp")}
           >
-            I’m the SLP
+            SLP
           </button>
         </div>
       </header>
 
-      <section className="slp-hero">
-        <p className="eyebrow">
-          {view === "learner" ? "Your speaking progress" : "Therapist view"}
-        </p>
-        <h1 className="brand brand-sm">
-          {view === "learner" ? "Keep going — you’re getting clearer" : "Guide the next steps"}
+      <header className="slp-hero">
+        <p className="brand brand-sm">Speak &amp; See</p>
+        <h1>
+          {view === "learner" ? "Your next sounds" : "Guide this learner"}
         </h1>
         <p className="lede">
           {view === "learner"
-            ? "Practise a little each day. The app watches which sounds are still tricky and picks what to try next — until your SLP wants to."
-            : "Review how each sound is going, then choose the words to focus on next. Your picks replace the app’s automatic suggestions."}
+            ? effective.assignedBy === "SLP"
+              ? "Your SLP picked these — tap one to practice."
+              : weakest.length
+                ? `Suggested for your trickier sounds${
+                    weakest[0] ? `, starting with “${weakest[0].phoneme}”.` : "."
+                  }`
+                : "A short starter set. Tap a word and practice with the camera."
+            : "Pick sounds and words, then fill a SIMPLE session plan — or let Gemma expand it."}
         </p>
-      </section>
+      </header>
 
-      <div className="slp-stats">
-        <div className="slp-stat">
-          <span className="slp-stat-num">{totals.sessionCount}</span>
-          <span className="slp-stat-label">day{totals.sessionCount === 1 ? "" : "s"} practised</span>
-        </div>
-        <div className="slp-stat">
-          <span className="slp-stat-num">{totals.attempts}</span>
-          <span className="slp-stat-label">sounds tried</span>
-        </div>
-        <div className="slp-stat">
-          <span className={`slp-stat-num is-${scoreTone(totals.overall)}`}>
-            {hasData ? totals.overall : "—"}
-          </span>
-          <span className="slp-stat-label">avg accuracy</span>
-        </div>
-      </div>
-
-      <div className="slp-grid">
-        <section className="slp-card">
-          <header className="slp-card-head">
-            <h2>Accuracy over time</h2>
-            <span className="slp-pill">{trend.length} session{trend.length === 1 ? "" : "s"}</span>
-          </header>
-          {hasData ? (
-            <>
-              <TrendLine points={trend.map((t) => t.avg)} />
-              <h3 className="slp-subhead">Sounds by accuracy</h3>
-              <PhonemeBars stats={stats} />
-            </>
-          ) : (
-            <p className="slp-empty">
-              No practice yet. Try a word below — each attempt lights up here,
-              sound by sound.
-            </p>
-          )}
-        </section>
-
-        {view === "learner" ? (
-          <section className="slp-card">
-            <header className="slp-card-head">
-              <h2>Practise next</h2>
-              <span className="slp-pill">
-                {effective.assignedBy === "SLP" ? "From your SLP" : "Chosen for you"}
-              </span>
-            </header>
+      {view === "learner" ? (
+        <section className="slp-panel slp-primary" aria-label="Practice next">
+          <div className="slp-panel-head">
+            <h2>Practice next</h2>
             <p className="slp-note">
               {effective.assignedBy === "SLP"
-                ? "Your SLP picked these for you."
-                : weakest.length
-                  ? `Focused on your trickiest sounds${
-                      weakest[0] ? ` — starting with “${weakest[0].phoneme}”.` : "."
-                    }`
-                  : "A gentle starter set to warm up."}
+                ? "From your SLP — tap a word to open the trainer."
+                : "Chosen for you — tap a word to open the trainer."}
             </p>
-            <div className="slp-words">
-              {effective.words.map((word) => (
-                <button
-                  key={word}
-                  type="button"
-                  className="slp-word-btn"
-                  onClick={() => practice(word)}
-                >
-                  <span className="slp-word-text">{word}</span>
-                  <span className="slp-word-go">Practise →</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : (
-          <section className="slp-card">
-            <header className="slp-card-head">
+          </div>
+          <div className="slp-word-grid">
+            {effective.words.map((word) => (
+              <button
+                key={word}
+                type="button"
+                className="slp-word-btn"
+                onClick={() => practice(word)}
+              >
+                <span className="slp-word-text">{word}</span>
+                <span className="slp-word-go">Practice →</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <>
+          <section className="slp-panel slp-primary" aria-label="Assign words">
+            <div className="slp-panel-head">
               <h2>Assign words</h2>
-              <span className="slp-pill">
-                {stored?.assignedBy === "SLP" ? "You’re steering" : "App is steering"}
-              </span>
-            </header>
-            <p className="slp-note">
-              Tap words to build this learner’s next set. Numbers show current
-              accuracy for that sound.
-            </p>
+              <p className="slp-note">
+                Tap words to build this learner’s next set. Numbers show current
+                accuracy when available.
+              </p>
+            </div>
             <div className="slp-contrasts">
               {contrasts.map(([contrast, words]) => (
                 <div key={contrast} className="slp-contrast">
                   <p className="slp-contrast-label">{contrast}</p>
-                  <div className="slp-words slp-words-compact">
+                  <div className="slp-picks">
                     {words.map((w) => {
                       const sc = phonemeScore(w.targetPhoneme);
                       const on = selected.includes(w.text);
@@ -468,7 +698,9 @@ export function SlpDashboard() {
                         >
                           <span>{w.text}</span>
                           {sc != null && (
-                            <span className={`slp-pick-score is-${scoreTone(sc)}`}>
+                            <span
+                              className={`slp-pick-score is-${scoreTone(sc)}`}
+                            >
                               {sc}
                             </span>
                           )}
@@ -482,65 +714,127 @@ export function SlpDashboard() {
             <div className="slp-assign-actions">
               <button
                 type="button"
-                className="btn btn-accent btn-compact"
+                className="btn btn-accent"
                 disabled={selected.length === 0}
                 onClick={assignAsSlp}
               >
-                Assign {selected.length} to learner
+                Assign {selected.length}{" "}
+                {selected.length === 1 ? "word" : "words"}
               </button>
               <button
                 type="button"
-                className="btn btn-ghost btn-compact"
+                className="btn btn-ghost"
                 onClick={handBackToAlgorithm}
               >
                 Let the app choose
               </button>
             </div>
           </section>
+
+          <section
+            className="slp-panel slp-alphabet-panel"
+            aria-label="Speech alphabet"
+          >
+            <div className="slp-panel-head">
+              <h2>Speech alphabet</h2>
+              <p className="slp-note">
+                Therapy sounds with IPA-ish labels. Tap a live cell to add its
+                practice words to the assign set. Grey = roadmap.
+              </p>
+            </div>
+            <SpeechAlphabet
+              selected={selected}
+              phonemeScore={phonemeScore}
+              onToggleSound={onToggleSound}
+            />
+          </section>
+        </>
+      )}
+
+      <section className="slp-panel slp-progress" aria-label="Progress">
+        <div className="slp-panel-head">
+          <h2>Progress</h2>
+          <p className="slp-progress-line">
+            {hasData ? (
+              <>
+                <strong className={`is-${scoreTone(totals.overall)}`}>
+                  {totals.overall}%
+                </strong>{" "}
+                avg · {totals.attempts} sounds · {totals.sessionCount} day
+                {totals.sessionCount === 1 ? "" : "s"}
+              </>
+            ) : (
+              <span className="slp-note">
+                No practice logged yet — start a word above.
+              </span>
+            )}
+          </p>
+        </div>
+
+        {hasData && (
+          <div className="slp-progress-body">
+            <div className="slp-progress-col">
+              <h2>Over time</h2>
+              <TrendLine points={trend.map((t) => t.avg)} />
+            </div>
+            <div className="slp-progress-col">
+              <h2>By sound</h2>
+              <PhonemeBars stats={stats} />
+            </div>
+          </div>
         )}
-      </div>
+      </section>
 
       {view === "slp" && (
-        <div className="slp-grid slp-grid-plan">
-          <section className="slp-card">
-            <header className="slp-card-head">
-              <h2>Lesson plan library</h2>
-              <span className="slp-pill">Year-long overview</span>
-            </header>
-            <p className="slp-note">
-              Tap a word to launch it in practice. Roadmap goals aren’t built
-              into the app yet — shown honestly, not faked.
-            </p>
-            <Curriculum onPractice={practice} />
+        <>
+          <section
+            className="slp-panel slp-worksheet-panel"
+            aria-label="SIMPLE session plan"
+          >
+            <div className="slp-panel-head">
+              <h2>SIMPLE session plan</h2>
+              <p className="slp-note">
+                Topic → targets → schedule → activities → vocabulary. Autosaved
+                on this device.
+              </p>
+            </div>
+            <PlanWorksheet
+              plan={plan}
+              onChange={updatePlan}
+              generating={generating}
+              generateError={generateError}
+              onGenerate={onGeneratePlan}
+            />
           </section>
 
-          <section className="slp-card">
-            <header className="slp-card-head">
-              <h2>Therapy planning</h2>
-              <span className="slp-pill">Autosaved</span>
-            </header>
-            <p className="slp-note">
-              Sketch a session around a theme — targets, schedule, and what
-              you already have on hand.
-            </p>
-            <PlanForm plan={plan} onChange={updatePlan} />
+          <section className="slp-panel slp-tool" aria-label="Curriculum">
+            <div className="slp-panel-head">
+              <h2>Curriculum</h2>
+              <p className="slp-note">
+                Launch practice words. Grey items are roadmap goals not in the
+                app yet.
+              </p>
+            </div>
+            <Curriculum onPractice={practice} />
           </section>
-        </div>
+        </>
       )}
 
       <footer className="slp-foot">
         <p className="slp-foot-note">
-          Progress is stored on this device only — no account, nothing leaves
-          your browser.
+          Stored on this device only — nothing leaves your browser.
         </p>
         {hasData && (
           <button
             type="button"
             className="slp-reset"
             onClick={() => {
-              if (window.confirm("Clear all practice progress on this device?")) {
+              if (
+                window.confirm("Clear all practice progress on this device?")
+              ) {
                 resetSlp();
                 setDraft(null);
+                updatePlan(EMPTY_PLAN);
               }
             }}
           >

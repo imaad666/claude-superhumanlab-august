@@ -260,6 +260,57 @@
   pointer-events: none;
 }
 
+/* Decorative speech alphabet — ink on the paper grid, not tiles */
+.landing-alphabet {
+  display: grid;
+  grid-template-columns: repeat(9, 48px);
+  justify-content: center;
+  gap: 0;
+  margin: 0.15rem auto 0;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.landing-alpha-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: rise 560ms ease both;
+}
+
+.landing-alpha-cell.is-live .landing-alpha-ipa {
+  color: var(--ink);
+}
+
+.landing-alpha-cell.is-soft {
+  opacity: 0.38;
+}
+
+.landing-alpha-ipa {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-secondary);
+}
+
+.landing-alpha-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+}
+
 .fun-strip {
   display: flex;
   flex-wrap: wrap;
@@ -325,5 +376,9 @@
 
   .path {
     min-height: 0;
+  }
+
+  .landing-alphabet {
+    grid-template-columns: repeat(6, 48px);
   }
 }

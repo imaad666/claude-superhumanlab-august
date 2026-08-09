@@ -109,7 +109,13 @@ export function InsightPanel({
       </div>
 
       <div className="spectro-frame insight-spectro">
-        <canvas ref={canvasRef} className="spectro-canvas" />
+        <canvas ref={canvasRef} className="spectro-canvas" aria-label="Voice waveform" />
+        <div className="wave-legend" aria-hidden>
+          <span className="wave-legend-loud">loud</span>
+          <span className="wave-legend-happy">happy</span>
+          <span className="wave-legend-mid">mid</span>
+          <span className="wave-legend-shallow">shallow</span>
+        </div>
         {spectroError && <p className="guide-empty">{spectroError}</p>}
       </div>
     </section>

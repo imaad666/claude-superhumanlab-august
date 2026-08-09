@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { INNER_LIP, OUTER_LIP, lipMeshes3D, type Point } from "../lips";
-import { mediapipePoseForViseme } from "../training/visemePoses";
 
 type LipMesh3DProps = {
   landmarks: Point[] | null;
@@ -13,7 +12,6 @@ const OUTER_N = OUTER_LIP.length;
 const INNER_N = INNER_LIP.length;
 /** Higher = snappier; lower = smoother / less jitter */
 const SMOOTH = 0.78;
-const REST_POSE = mediapipePoseForViseme("rest");
 
 /**
  * Soft MediaPipe lip surface — same mesh for live camera and Watch poses.
@@ -199,8 +197,6 @@ export function LipMesh3D({ landmarks, tracking, emptyHint }: LipMesh3DProps) {
       const lms = landmarksRef.current;
       if (trackingRef.current && lms?.length) {
         setTargetFromLandmarks(lms);
-      } else {
-        setTargetFromLandmarks(REST_POSE);
       }
       if (seeded) {
         lerpBuf(

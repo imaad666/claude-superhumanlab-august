@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { RotatingLabel } from "../components/RotatingLabel";
+import { SPEECH_ALPHABET } from "../slp/speechAlphabet";
 
 const slpPhrases = [
   "For young learners",
@@ -54,6 +55,21 @@ export function LandingPage() {
           </span>
         </Link>
       </nav>
+
+      <div className="landing-alphabet" aria-hidden="true">
+        {SPEECH_ALPHABET.map((cell, i) => (
+          <span
+            key={cell.id}
+            className={`landing-alpha-cell ${
+              cell.status === "practice" ? "is-live" : "is-soft"
+            }`}
+            style={{ animationDelay: `${120 + i * 35}ms` }}
+          >
+            <span className="landing-alpha-ipa">/{cell.ipa}/</span>
+            <span className="landing-alpha-label">{cell.label}</span>
+          </span>
+        ))}
+      </div>
 
       <section className="fun-strip" aria-label="Quick starts">
         <p className="fun-strip-label">Or jump straight in</p>

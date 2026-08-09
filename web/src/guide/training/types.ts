@@ -59,10 +59,47 @@ export type StepScore = {
   opennessErr: number;
   widthErr: number;
   roundnessErr: number;
+  /** Target vs observed signals — same vocabulary as the Brain meters. */
+  metrics?: StepMetrics;
+};
+
+/** Per-step readout for the Sound map (0–1). */
+export type StepMetrics = {
+  target: {
+    open: number;
+    wide: number;
+    round: number;
+    vol: number;
+  };
+  observed: {
+    open: number;
+    wide: number;
+    round: number;
+    vol: number;
+    pitch: number;
+    smile: number;
+    jaw: number;
+    funnel: number;
+  };
 };
 
 export type LessonAttemptResult = {
   overall: "good" | "close" | "try_again";
   scores: StepScore[];
   summary: string;
+};
+
+/** Post-attempt coaching generated after the instant local score is shown. */
+export type LessonAttemptFeedback = {
+  summary: string;
+  maneuver: string;
+  sound: string;
+  stress: string;
+  /** True stress is unavailable until we collect time-aligned pitch data. */
+  stressStatus: "on_target" | "needs_work" | "unavailable";
+  nextAction: string;
+  focus: "maneuver" | "sound" | "stress";
+  source: "ollama" | "heuristic";
+  model: string | null;
+  usedVision: boolean;
 };

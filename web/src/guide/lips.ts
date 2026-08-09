@@ -109,6 +109,61 @@ export function alignLandmarksToBox(
   return out;
 }
 
+/**
+ * Place a target lip pose over the learner's mouth without normalizing it to
+ * the learner's current lip box. A target "ah" therefore stays visibly more
+ * open than closed live lips, and an "ee" stays visibly wider.
+ */
+export function alignLandmarksToFace(
+  target: Point[],
+  live: Point[],
+): Point[] | null {
+  const targetLeft = target[61];
+  const targetRight = target[291];
+  const targetTop = target[13] ?? target[0];
+  const targetBottom = target[14] ?? target[17];
+  const liveLeft = live[61];
+  const liveRight = live[291];
+  const liveTop = live[13] ?? live[0];
+  const liveBottom = live[14] ?? live[17];
+  const liveCheekLeft = live[234];
+  const liveCheekRight = live[454];
+
+  if (
+    !targetLeft ||
+    !targetRight ||
+    !targetTop ||
+    !targetBottom ||
+    !liveLeft ||
+    !liveRight ||
+    !liveTop ||
+    !liveBottom
+  ) {
+    return null;
+  }
+
+  const targetCenter = {
+    x: (targetLeft.x + targetRight.x) * 0.5,
+    y: (targetTop.y + targetBottom.y) * 0.5,
+  };
+  const liveCenter = {
+    x: (liveLeft.x + liveRight.x) * 0.5,
+    y: (liveTop.y + liveBottom.y) * 0.5,
+  };
+  const faceWidth =
+    liveCheekLeft && liveCheekRight
+      ? Math.hypot(liveCheekRight.x - liveCheekLeft.x, liveCheekRight.y - liveCheekLeft.y)
+      : Math.hypot(liveRight.x - liveLeft.x, liveRight.y - liveLeft.y) * 2.6;
+  // Synthetic visemes are authored against a normalized ~0.36 face width.
+  const scale = Math.min(1.5, Math.max(0.65, faceWidth / 0.36));
+
+  return target.map((point) => ({
+    x: liveCenter.x + (point.x - targetCenter.x) * scale,
+    y: liveCenter.y + (point.y - targetCenter.y) * scale,
+    z: point.z ?? 0,
+  }));
+}
+
 export type LipMeshBuffers = {
   outer: Float32Array;
   inner: Float32Array;

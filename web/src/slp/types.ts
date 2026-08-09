@@ -2,7 +2,7 @@
  * SLP Guide data model — the logging + dashboard + assignment loop built on
  * top of the existing Personal Trainer scoring output. No new pipeline.
  *
- * Same data model powers both cases: a learner practising alone (algorithm
+ * Same data model powers both cases: a learner practicing alone (algorithm
  * picks the next targets) and a learner with a real SLP (a human picks them).
  * Only who fills the "pick next targets" slot changes.
  */
@@ -58,6 +58,17 @@ export type CurriculumCategory = {
   items: CurriculumItem[];
 };
 
+/** Speechy Musings–style vocabulary buckets for a themed unit. */
+export type TherapyVocab = {
+  core: string[];
+  basicConcepts: string[];
+  describing: string[];
+  tier2: string[];
+  other: string[];
+};
+
+export type TherapyVocabKey = keyof TherapyVocab;
+
 /** SLP's free-form session plan for a theme — one active plan, stored locally. */
 export type TherapyPlan = {
   topic: string;
@@ -65,5 +76,16 @@ export type TherapyPlan = {
   schedule: string[];
   activitiesHave: string;
   activitiesNeed: string;
+  vocab: TherapyVocab;
+  /** Short Gemma blurb after Generate plan. */
+  generatedNote?: string;
   updatedAt: number;
+};
+
+export const EMPTY_VOCAB: TherapyVocab = {
+  core: [],
+  basicConcepts: [],
+  describing: [],
+  tier2: [],
+  other: [],
 };

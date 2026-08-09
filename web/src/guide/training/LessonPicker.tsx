@@ -88,7 +88,9 @@ export function LessonPicker({
         <div>
           <h2>{kind === "word" ? "Learn a word" : "Learn a sentence"}</h2>
           <p className="guide-sub">
-            Pick one — then speak it while matching your lips
+            {kind === "sentence"
+              ? "Practice one word at a time — the next word prepares while you speak"
+              : "Pick one — then speak it while matching your lips"}
           </p>
         </div>
       </header>

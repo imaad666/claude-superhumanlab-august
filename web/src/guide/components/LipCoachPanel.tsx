@@ -86,13 +86,15 @@ export function LipCoachPanel({
       </header>
 
       <div className="coach-stack">
-        <LipMesh3D
-          landmarks={poseLandmarks}
-          tracking={Boolean(demo || demoLandmarks?.length || tracking)}
-          emptyHint={
-            demo || demoLandmarks?.length ? "Loading mouth pose…" : undefined
-          }
-        />
+        <div className="coach-mouth-stage">
+          <LipMesh3D
+            landmarks={poseLandmarks}
+            tracking={Boolean(demo || demoLandmarks?.length || tracking)}
+            emptyHint={
+              demo || demoLandmarks?.length ? "Loading mouth pose…" : undefined
+            }
+          />
+        </div>
 
         <p className="coach-metrics">
           {demo && guide ? (

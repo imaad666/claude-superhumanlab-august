@@ -1,5 +1,11 @@
-import type { LipFeatures } from "../features";
-import type { LessonAttemptResult, LessonMemory, LessonStep, StepScore } from "./types";
+import type { ExpressionFeatures, LipFeatures } from "../features";
+import type {
+  LessonAttemptResult,
+  LessonMemory,
+  LessonStep,
+  StepMetrics,
+  StepScore,
+} from "./types";
 
 function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
@@ -16,24 +22,60 @@ function needsVoice(step: LessonStep): boolean {
   return stepNeedsVoice(step);
 }
 
-function voiceHeard(step: LessonStep, volume: number, spokenHit: boolean): boolean {
+function voiceHeard(
+  step: LessonStep,
+  volume: number,
+  spokenHit: boolean,
+): boolean {
   if (spokenHit) return true;
   if (!needsVoice(step)) {
-    // Closures: silence is fine; loud is also fine.
     return true;
   }
-  // Laptop mics after gain boost — speaking should clear ~0.06+.
   const floor = Math.max(0.055, (step.targets.volume ?? 0.1) * 0.45);
   return volume >= floor;
 }
 
 function spokenMatches(step: LessonStep, spokenHint: string): boolean {
-  const raw = spokenHint.toLowerCase().replace(/[^a-z\s']/g, " ");
-  if (!raw.trim()) return false;
+  const tokens = spokenHint
+    .toLowerCase()
+    .replace(/[^a-z\s']/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(-8);
+  if (!tokens.length) return false;
+  const hay = tokens.join(" ");
   const needles = [step.speakAs, step.label, step.viseme]
     .map((s) => s.toLowerCase().replace(/[^a-z']/g, ""))
     .filter((s) => s.length >= 1);
-  return needles.some((n) => n.length >= 2 && raw.includes(n));
+  return needles.some((n) => n.length >= 2 && hay.includes(n));
+}
+
+function buildMetrics(
+  step: LessonStep,
+  lips: LipFeatures,
+  volume: number,
+  pitchHint = 0,
+  expression: ExpressionFeatures | null = null,
+): StepMetrics {
+  return {
+    target: {
+      open: clamp01(step.targets.openness),
+      wide: clamp01(step.targets.width),
+      round: clamp01(step.targets.roundness),
+      vol: clamp01(step.targets.volume ?? 0.1),
+    },
+    observed: {
+      open: clamp01(lips.openness),
+      wide: clamp01(lips.width),
+      round: clamp01(lips.roundness),
+      vol: clamp01(volume),
+      pitch: clamp01(pitchHint),
+      smile: clamp01(expression?.smile ?? 0),
+      jaw: clamp01(expression?.jawOpen ?? 0),
+      funnel: clamp01(expression?.mouthFunnel ?? 0),
+    },
+  };
 }
 
 /**
@@ -45,6 +87,8 @@ export function scoreStep(
   lips: LipFeatures,
   volume = 0,
   spokenHint = "",
+  pitchHint = 0,
+  expression: ExpressionFeatures | null = null,
 ): StepScore {
   const t = step.targets;
   const opennessErr = Math.abs(lips.openness - t.openness);
@@ -55,19 +99,16 @@ export function scoreStep(
   const spokenHit = spokenMatches(step, spokenHint);
   const voiceOk = voiceHeard(step, volume, spokenHit);
 
-  // Shape band — slightly forgiving so real faces can pass.
   let shapeMatch: StepScore["match"] = "try_again";
   if (shapeErr < 0.16) shapeMatch = "good";
   else if (shapeErr < 0.3) shapeMatch = "close";
 
   let match: StepScore["match"] = shapeMatch;
   if (needsVoice(step) && !voiceOk) {
-    // Looks okay but no voice → never "good".
     if (shapeMatch === "good") match = "close";
     else if (shapeMatch === "close" && shapeErr > 0.22) match = "try_again";
   }
   if (spokenHit && shapeMatch !== "try_again") {
-    // STT heard the sound — nudge up when shape is in the ballpark.
     if (match === "close" && shapeErr < 0.24) match = "good";
   }
 
@@ -91,6 +132,7 @@ export function scoreStep(
     opennessErr,
     widthErr,
     roundnessErr,
+    metrics: buildMetrics(step, lips, volume, pitchHint, expression),
   };
 }
 
@@ -110,29 +152,22 @@ function shortfallCue(
   }
 
   if (needsVoice(step) && !voiceOk) {
-    return `Say “${step.speakAs}” out loud — I’m listening (voice is low).`;
+    return `Say “${step.speakAs}” out loud while you hold the shape.`;
   }
 
-  const worst =
-    oErr >= wErr && oErr >= rErr
-      ? "open"
-      : wErr >= rErr
-        ? "wide"
-        : "round";
-
-  if (worst === "round") {
-    if (lips.roundness < step.targets.roundness) {
-      return `Round lips more for “${step.speakAs}”.`;
+  if (wErr >= oErr && wErr >= rErr) {
+    if (lips.width < step.targets.width - 0.12) {
+      return `Widen your smile for “${step.speakAs}”.`;
     }
-    return `Soften the roundness a bit on “${step.speakAs}”.`;
+    return `Bring the corners in a little for “${step.speakAs}”.`;
   }
-  if (worst === "wide") {
-    if (lips.width < step.targets.width) {
-      return `Pull lips wider for “${step.speakAs}”.`;
+  if (rErr >= oErr && rErr >= wErr) {
+    if (lips.roundness < step.targets.roundness - 0.12) {
+      return `Round your lips more for “${step.speakAs}”.`;
     }
-    return `Less wide — relax the sides for “${step.speakAs}”.`;
+    return `Relax the round for “${step.speakAs}”.`;
   }
-  if (lips.openness < step.targets.openness) {
+  if (lips.openness < step.targets.openness - 0.15) {
     return `Open a little more for “${step.speakAs}”.`;
   }
   if (lips.openness > step.targets.openness + 0.15) {
@@ -141,12 +176,19 @@ function shortfallCue(
   return step.cue;
 }
 
+type AttemptSample = {
+  lips: LipFeatures;
+  volume: number;
+  pitchHint?: number;
+  expression?: ExpressionFeatures | null;
+};
+
 /**
  * Score a recreate pass: peak lips sampled per step window.
  */
 export function scoreAttempt(
   lesson: LessonMemory,
-  perStepBest: Array<{ lips: LipFeatures; volume: number } | null>,
+  perStepBest: Array<AttemptSample | null>,
 ): LessonAttemptResult {
   const scores: StepScore[] = lesson.steps.map((step, i) => {
     const sample = perStepBest[i];
@@ -161,9 +203,23 @@ export function scoreAttempt(
         opennessErr: 1,
         widthErr: 1,
         roundnessErr: 1,
+        metrics: buildMetrics(
+          step,
+          { openness: 0, width: 0, roundness: 0, visemeGuess: "rest" },
+          0,
+          0,
+          null,
+        ),
       };
     }
-    return scoreStep(step, sample.lips, sample.volume);
+    return scoreStep(
+      step,
+      sample.lips,
+      sample.volume,
+      "",
+      sample.pitchHint ?? 0,
+      sample.expression ?? null,
+    );
   });
 
   const good = scores.filter((s) => s.match === "good").length;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ToneKind, TranscriptWord } from "../types";
 
 type SpeechRecognitionLike = {
@@ -31,6 +31,7 @@ function wordsFromText(
   text: string,
   volume: number,
   pitchHint: number,
+  t?: number,
 ): TranscriptWord[] {
   return text
     .trim()
@@ -40,6 +41,7 @@ function wordsFromText(
       id: `${Date.now()}-${i}-${word}`,
       text: word,
       tone: toneFromMetrics(volume, pitchHint + (i % 3) * 0.03),
+      t,
     }));
 }
 
@@ -47,6 +49,7 @@ export function useLiveTranscript(
   enabled: boolean,
   volume: number,
   pitchHint: number,
+  recordingStartedAt: number | null = null,
 ) {
   const [words, setWords] = useState<TranscriptWord[]>([]);
   const [interim, setInterim] = useState("");
@@ -54,10 +57,15 @@ export function useLiveTranscript(
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const metricsRef = useRef({ volume, pitchHint });
+  const recordingStartedAtRef = useRef<number | null>(recordingStartedAt);
 
   useEffect(() => {
     metricsRef.current = { volume, pitchHint };
   }, [volume, pitchHint]);
+
+  useEffect(() => {
+    recordingStartedAtRef.current = recordingStartedAt;
+  }, [recordingStartedAt]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -99,7 +107,9 @@ export function useLiveTranscript(
 
       if (finals.length) {
         const { volume: v, pitchHint: p } = metricsRef.current;
-        const next = finals.flatMap((chunk) => wordsFromText(chunk, v, p));
+        const startedAt = recordingStartedAtRef.current;
+        const t = startedAt == null ? undefined : Math.max(0, Date.now() - startedAt);
+        const next = finals.flatMap((chunk) => wordsFromText(chunk, v, p, t));
         setWords((prev) => [...prev, ...next].slice(-80));
       }
       setInterim(interimText);
@@ -142,10 +152,10 @@ export function useLiveTranscript(
     };
   }, [enabled]);
 
-  const clear = () => {
+  const clear = useCallback(() => {
     setWords([]);
     setInterim("");
-  };
+  }, []);
 
   return { words, interim, listening, error, clear };
 }

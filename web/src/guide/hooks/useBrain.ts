@@ -165,7 +165,17 @@ export function useBrain(input: BrainInput) {
   }, [input.enabled, serverOk]);
 
   useEffect(() => {
-    if (!input.enabled) wokeRef.current = false;
+    if (input.enabled) return;
+
+    // An in-flight request is intentionally ignored after Stop. Reset all
+    // request-derived UI state as well, so the panel cannot remain “Seeing…”
+    // or show coaching from the previous camera session.
+    wokeRef.current = false;
+    inFlight.current = false;
+    setRemote(null);
+    setWaking(false);
+    setThinking(false);
+    setError(null);
   }, [input.enabled]);
 
   useEffect(() => {
@@ -176,6 +186,7 @@ export function useBrain(input: BrainInput) {
     async function analyze() {
       if (inFlight.current) return;
       const current = inputRef.current;
+      const targetAtRequest = current.coachTarget;
       // #region agent log
       fetch("http://127.0.0.1:7904/ingest/a7463e60-1f4a-4b91-b6b8-9ad6b90b1214", {
         method: "POST",
@@ -232,7 +243,12 @@ export function useBrain(input: BrainInput) {
         });
         if (!res.ok) throw new Error(`Analyze failed (${res.status})`);
         const data = await res.json();
-        if (cancelled) return;
+        // A lesson may already have advanced to a new sound while Gemma was
+        // looking at the previous crop. Never show that old cue on the new
+        // target step.
+        if (cancelled || inputRef.current.coachTarget !== targetAtRequest) {
+          return;
+        }
         setRemote({
           tone: data.tone,
           mood: data.mood,

@@ -1,3 +1,4 @@
+import { analyzeHeuristic } from "./brainHeuristic";
 import type { BrainInsight } from "./brainHeuristic";
 import type {
   GuideSession,
@@ -24,10 +25,12 @@ const MAX_SEGMENTS = 5;
 
 function isSpeaking(sample: SessionSample): boolean {
   return (
-    sample.volume > 0.045 ||
-    sample.lips.openness > 0.14 ||
-    sample.expression.jawOpen > 0.18 ||
-    sample.recentWords.length > 0
+    sample.volume > 0.03 ||
+    sample.lips.openness > 0.1 ||
+    sample.expression.jawOpen > 0.12 ||
+    sample.recentWords.length > 0 ||
+    Boolean(sample.landmarks) ||
+    Boolean(sample.lipImage)
   );
 }
 
@@ -56,49 +59,67 @@ export function pickKeySamples(samples: SessionSample[]): SessionSample[] {
   });
 }
 
-async function analyzeSample(sample: SessionSample): Promise<BrainInsight> {
-  const res = await fetch("/api/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      mode: "live",
-      transcript: sample.transcript,
-      recent_words: sample.recentWords.slice(-12),
-      lips: {
-        openness: sample.lips.openness,
-        width: sample.lips.width,
-        roundness: sample.lips.roundness,
-        viseme_guess: sample.lips.visemeGuess,
-      },
-      audio: {
-        volume: sample.volume,
-        pitch_hint: sample.pitchHint,
-      },
-      expression: {
-        smile: sample.expression.smile,
-        brow_up: sample.expression.browUp,
-        brow_down: sample.expression.browDown,
-        jaw_open: sample.expression.jawOpen,
-        mouth_funnel: sample.expression.mouthFunnel,
-      },
-      coach_target: sample.lips.visemeGuess,
-      lip_image: sample.lipImage,
-    }),
+function heuristicFromSample(sample: SessionSample): BrainInsight {
+  return analyzeHeuristic({
+    mode: "live",
+    transcript: sample.transcript,
+    recentWords: sample.recentWords,
+    lips: sample.lips,
+    volume: sample.volume,
+    pitchHint: sample.pitchHint,
+    expression: sample.expression,
+    coachTarget: sample.lips.visemeGuess,
   });
-  if (!res.ok) throw new Error(`Analyze failed (${res.status})`);
-  const data = (await res.json()) as AnalyzeApiResponse;
-  return {
-    tone: data.tone,
-    mood: data.mood,
-    intention: data.intention,
-    summary: data.summary,
-    lipMatch: data.lip_match,
-    lipCue: data.lip_cue,
-    words: data.words ?? [],
-    source: data.source,
-    model: data.model ?? null,
-    usedVision: Boolean(data.used_vision),
-  };
+}
+
+async function analyzeSample(sample: SessionSample): Promise<BrainInsight> {
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "live",
+        transcript: sample.transcript,
+        recent_words: sample.recentWords.slice(-12),
+        lips: {
+          openness: sample.lips.openness,
+          width: sample.lips.width,
+          roundness: sample.lips.roundness,
+          viseme_guess: sample.lips.visemeGuess,
+        },
+        audio: {
+          volume: sample.volume,
+          pitch_hint: sample.pitchHint,
+        },
+        expression: {
+          smile: sample.expression.smile,
+          brow_up: sample.expression.browUp,
+          brow_down: sample.expression.browDown,
+          jaw_open: sample.expression.jawOpen,
+          mouth_funnel: sample.expression.mouthFunnel,
+        },
+        coach_target: sample.lips.visemeGuess,
+        lip_image: sample.lipImage,
+      }),
+    });
+    if (!res.ok) throw new Error(`Analyze failed (${res.status})`);
+    const data = (await res.json()) as AnalyzeApiResponse;
+    return {
+      tone: data.tone,
+      mood: data.mood,
+      intention: data.intention,
+      summary: data.summary,
+      lipMatch: data.lip_match,
+      lipCue: data.lip_cue,
+      words: data.words ?? [],
+      source: data.source,
+      model: data.model ?? null,
+      usedVision: Boolean(data.used_vision),
+    };
+  } catch {
+    // Brain offline — still return a useful local readout.
+    return heuristicFromSample(sample);
+  }
 }
 
 function modeOf<T extends string>(values: T[], fallback: T): T {
@@ -121,7 +142,8 @@ function aggregate(segments: SessionSegment[], words: GuideSession["words"]): Br
       tone: "soft",
       mood: "neutral",
       intention: "unknown",
-      summary: "No speech moments captured — try recording a bit longer.",
+      summary:
+        "No speech moments in this take — record longer with the face in frame, then stop.",
       lipMatch: "close",
       lipCue: "Point the camera at their mouth while they speak.",
       words: words.slice(-12).map((w) => ({ text: w.text, tone: w.tone })),

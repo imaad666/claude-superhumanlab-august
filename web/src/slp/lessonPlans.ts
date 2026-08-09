@@ -1,4 +1,4 @@
-import type { CurriculumCategory } from "./types";
+import type { CurriculumCategory, TherapyVocabKey } from "./types";
 
 /**
  * SLP curriculum library — grouped goals for the "I'm the SLP" view, in the
@@ -85,6 +85,8 @@ export const PLAN_TARGET_OPTIONS = [
   "Word-finding",
   "Producing sentences",
   "Articulation — minimal pairs",
+  "Core vocabulary",
+  "Basic concepts",
 ];
 
 export const PLAN_SCHEDULE_OPTIONS = [
@@ -93,3 +95,20 @@ export const PLAN_SCHEDULE_OPTIONS = [
   "Practice",
   "Fun",
 ];
+
+/** Suggested starter chips per Speechy Musings vocab bucket. */
+export const PLAN_VOCAB_CHIPS: Record<TherapyVocabKey, string[]> = {
+  core: ["want", "more", "help", "go", "stop", "like"],
+  basicConcepts: ["big", "little", "same", "different", "in", "on"],
+  describing: ["color", "size", "shape", "feel", "sound"],
+  tier2: ["observe", "predict", "compare", "explain", "decide"],
+  other: ["and", "because", "then", "first", "next"],
+};
+
+export const PLAN_VOCAB_LABELS: Record<TherapyVocabKey, string> = {
+  core: "Core vocabulary",
+  basicConcepts: "Basic concepts",
+  describing: "Describing",
+  tier2: "Tier 2 vocabulary",
+  other: "Other (conjunctions / affixes)",
+};
