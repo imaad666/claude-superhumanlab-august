@@ -1,0 +1,22 @@
+# Dependencies / build
+node_modules
+web/node_modules
+web/dist
+server/.venv
+.venv
+dist
+
+# Env / local
+.env
+.env.*
+!.env.example
+*.local
+
+# OS / editor
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Vercel
+.vercel

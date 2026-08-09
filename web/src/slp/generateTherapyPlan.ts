@@ -1,5 +1,4 @@
 import type { TherapyPlan, TherapyVocab } from "./types";
-import { EMPTY_VOCAB } from "./types";
 
 export type TherapyPlanGenerateInput = {
   topic: string;

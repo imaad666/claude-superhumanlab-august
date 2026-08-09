@@ -1,5 +1,15 @@
 # Speak & See
 
+[Full deck (PPTX)](./Speak-and-See-Deck.pptx)
+
+![Slide 1 — SLP](./deck/slide-01.png)
+
+![Slide 2 — Problem](./deck/slide-02.png)
+
+![Slide 3 — Speak & See](./deck/slide-03.png)
+
+![Slide 4 — The loop](./deck/slide-04.png)
+
 Speech companion for Deaf/HoH users — Superhuman Lab hackathon.
 
 ## One command
@@ -11,6 +21,16 @@ npm run dev
 Wakes **Ollama + `gemma3:4b`** (vision, ~3.3GB), FastAPI brain `:8000`, Vite `:5173`.
 
 Open http://127.0.0.1:5173 → **Start**. Live meters update instantly; vision coaching refreshes every ~2–3s with the lip crop + all metrics.
+
+## Deploy (heuristics-only)
+
+Live: **https://claude-superhuman.vercel.app**
+
+Static Vercel deploy of `web/` — no Ollama required. Brain API calls fall through to on-device heuristics.
+
+```bash
+npx vercel --prod
+```
 
 ## Brain design (speed + accuracy)
 
@@ -50,4 +70,3 @@ Record a teacher/friend speaking (camera + mic + MediaPipe lip vectors). After y
 
 - **Free practice** — live meters + vision coaching.
 - **Learn a word / Learn a sentence** — bank, custom (model), or **captured Live Guide** lessons with teacher MediaPipe vectors. Camera scores your lips live against each sound.
-
