@@ -1,16 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { assignableWords } from "../guide/training/bank";
+import {
+  CURRICULUM,
+  PLAN_SCHEDULE_OPTIONS,
+  PLAN_TARGET_OPTIONS,
+} from "./lessonPlans";
 import { autoAssign, computePhonemeStats, sessionTrend } from "./stats";
 import {
   getAssignedSet,
+  getPlan,
   getSessions,
   resetSlp,
   setAssignedSet,
+  setPlan,
   SLP_EVENT,
 } from "./store";
-import type { PhonemeStats } from "./types";
+import type { PhonemeStats, TherapyPlan } from "./types";
 import "./SlpDashboard.css";
+
+const EMPTY_PLAN: TherapyPlan = {
+  topic: "",
+  targets: [],
+  schedule: [],
+  activitiesHave: "",
+  activitiesNeed: "",
+  updatedAt: 0,
+};
 
 type View = "learner" | "slp";
 
@@ -75,6 +91,137 @@ function PhonemeBars({ stats }: { stats: PhonemeStats[] }) {
   );
 }
 
+/** Year-long-style curriculum overview — practice items launch a lesson. */
+function Curriculum({ onPractice }: { onPractice: (word: string) => void }) {
+  return (
+    <div className="slp-curriculum">
+      {CURRICULUM.map((cat) => (
+        <div key={cat.id} className="slp-curr-cat">
+          <p className="slp-curr-cat-title">{cat.title}</p>
+          <div className="slp-curr-items">
+            {cat.items.map((item) =>
+              item.status === "practice" ? (
+                <div key={item.label} className="slp-curr-item is-practice">
+                  <span className="slp-curr-item-label">{item.label}</span>
+                  <span className="slp-curr-item-words">
+                    {item.words?.map((w) => (
+                      <button
+                        key={w}
+                        type="button"
+                        className="slp-curr-word"
+                        onClick={() => onPractice(w)}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              ) : (
+                <span key={item.label} className="slp-curr-item is-roadmap">
+                  {item.label}
+                  <span className="slp-curr-roadmap-tag">roadmap</span>
+                </span>
+              ),
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** SLP's single-plan session worksheet — autosaves to localStorage. */
+function PlanForm({
+  plan,
+  onChange,
+}: {
+  plan: TherapyPlan;
+  onChange: (next: TherapyPlan) => void;
+}) {
+  const update = (patch: Partial<TherapyPlan>) =>
+    onChange({ ...plan, ...patch, updatedAt: Date.now() });
+
+  const toggle = (key: "targets" | "schedule", value: string) => {
+    const set = plan[key];
+    update({
+      [key]: set.includes(value)
+        ? set.filter((v) => v !== value)
+        : [...set, value],
+    } as Partial<TherapyPlan>);
+  };
+
+  return (
+    <div className="slp-plan-form">
+      <label className="slp-plan-field">
+        <span className="slp-plan-label">Topic / theme</span>
+        <input
+          className="slp-plan-input"
+          type="text"
+          placeholder="e.g. Outer space — planets, stars, astronauts"
+          value={plan.topic}
+          onChange={(e) => update({ topic: e.target.value })}
+        />
+      </label>
+
+      <div className="slp-plan-field">
+        <span className="slp-plan-label">Targets</span>
+        <div className="slp-plan-chips">
+          {PLAN_TARGET_OPTIONS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={plan.targets.includes(t)}
+              className={`slp-plan-chip ${plan.targets.includes(t) ? "is-on" : ""}`}
+              onClick={() => toggle("targets", t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="slp-plan-field">
+        <span className="slp-plan-label">Schedule</span>
+        <div className="slp-plan-chips">
+          {PLAN_SCHEDULE_OPTIONS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              aria-pressed={plan.schedule.includes(s)}
+              className={`slp-plan-chip ${plan.schedule.includes(s) ? "is-on" : ""}`}
+              onClick={() => toggle("schedule", s)}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="slp-plan-field">
+        <span className="slp-plan-label">Activities you already have</span>
+        <textarea
+          className="slp-plan-textarea"
+          rows={2}
+          placeholder="What do you already own that pairs with this theme?"
+          value={plan.activitiesHave}
+          onChange={(e) => update({ activitiesHave: e.target.value })}
+        />
+      </label>
+
+      <label className="slp-plan-field">
+        <span className="slp-plan-label">Activities you still need</span>
+        <textarea
+          className="slp-plan-textarea"
+          rows={2}
+          placeholder="What gaps do you need to fill?"
+          value={plan.activitiesNeed}
+          onChange={(e) => update({ activitiesNeed: e.target.value })}
+        />
+      </label>
+    </div>
+  );
+}
+
 export function SlpDashboard() {
   const navigate = useNavigate();
   const [view, setView] = useState<View>("learner");
@@ -104,6 +251,12 @@ export function SlpDashboard() {
     () => (stored?.assignedBy === "SLP" ? stored : autoAssign(sessions)),
     [stored, sessions],
   );
+
+  const [plan, setPlanState] = useState<TherapyPlan>(() => getPlan() ?? EMPTY_PLAN);
+  const updatePlan = useCallback((next: TherapyPlan) => {
+    setPlanState(next);
+    setPlan(next);
+  }, []);
 
   // Persist the algorithm's pick so the trainer/picker see it — unless a human
   // SLP has taken the wheel, in which case auto-assignment stays quiet.
@@ -346,6 +499,34 @@ export function SlpDashboard() {
           </section>
         )}
       </div>
+
+      {view === "slp" && (
+        <div className="slp-grid slp-grid-plan">
+          <section className="slp-card">
+            <header className="slp-card-head">
+              <h2>Lesson plan library</h2>
+              <span className="slp-pill">Year-long overview</span>
+            </header>
+            <p className="slp-note">
+              Tap a word to launch it in practice. Roadmap goals aren’t built
+              into the app yet — shown honestly, not faked.
+            </p>
+            <Curriculum onPractice={practice} />
+          </section>
+
+          <section className="slp-card">
+            <header className="slp-card-head">
+              <h2>Therapy planning</h2>
+              <span className="slp-pill">Autosaved</span>
+            </header>
+            <p className="slp-note">
+              Sketch a session around a theme — targets, schedule, and what
+              you already have on hand.
+            </p>
+            <PlanForm plan={plan} onChange={updatePlan} />
+          </section>
+        </div>
+      )}
 
       <footer className="slp-foot">
         <p className="slp-foot-note">

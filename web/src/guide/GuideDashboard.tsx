@@ -42,7 +42,9 @@ type GuideDashboardProps = {
 export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
   const isLive = mode === "live";
   const [trainerMode, setTrainerMode] = useState<TrainerMode>(
-    !isLive && initialWord ? "word" : "free",
+    !isLive && initialWord
+      ? (findBankLesson(initialWord)?.kind ?? "word")
+      : "free",
   );
   const [pendingWord, setPendingWord] = useState<string | null>(
     !isLive ? initialWord ?? null : null,
@@ -202,16 +204,18 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
     if (!isLive && initialWord) setPendingWord(initialWord);
   }, [isLive, initialWord]);
 
-  // Consume a preloaded word: switch to Learn-a-word, then auto-start it once
-  // the lesson session has reset to the pick phase.
+  // Consume a preloaded word or sentence: look it up in either bank, switch
+  // to the matching Learn tab, then auto-start it once the lesson session
+  // has reset to the pick phase. Falls back to "word" for unknown text.
   useEffect(() => {
     if (isLive || !pendingWord) return;
-    if (trainerMode !== "word") {
-      setTrainer("word");
+    const mem = findBankLesson(pendingWord);
+    const targetMode: TrainerMode = mem?.kind ?? "word";
+    if (trainerMode !== targetMode) {
+      setTrainer(targetMode);
       return;
     }
     if (lesson.phase !== "pick") return;
-    const mem = findBankLesson(pendingWord, "word");
     if (mem) lesson.startLesson(mem);
     setPendingWord(null);
   }, [isLive, pendingWord, trainerMode, lesson.phase, lesson.startLesson, setTrainer]);

@@ -38,3 +38,32 @@ export type AssignedSet = {
   assignedBy: "algorithm" | "SLP";
   dueBy?: string;
 };
+
+/**
+ * A curriculum item inside a lesson-plan category. "practice" items map to
+ * real content in the word/sentence bank and are launchable; "roadmap" items
+ * are goals the app doesn't have practice content for yet — shown honestly,
+ * not faked (same pattern as the on-device-inference note in the pitch doc).
+ */
+export type CurriculumItem = {
+  label: string;
+  status: "practice" | "roadmap";
+  /** Bank words/sentences that exercise this goal, when status is "practice". */
+  words?: string[];
+};
+
+export type CurriculumCategory = {
+  id: string;
+  title: string;
+  items: CurriculumItem[];
+};
+
+/** SLP's free-form session plan for a theme — one active plan, stored locally. */
+export type TherapyPlan = {
+  topic: string;
+  targets: string[];
+  schedule: string[];
+  activitiesHave: string;
+  activitiesNeed: string;
+  updatedAt: number;
+};
