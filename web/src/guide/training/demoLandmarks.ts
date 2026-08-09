@@ -17,7 +17,7 @@ export function demoLandmarksForViseme(viseme: VisemeId): Point[] {
 }
 
 export function demoLandmarksForTargets(targets: StepTargets): Point[] {
-  const points: Point[] = Array.from({ length: 478 }, (_, i) => ({
+  const points: Point[] = Array.from({ length: 478 }, () => ({
     x: 0.5,
     y: 0.55,
     z: 0,

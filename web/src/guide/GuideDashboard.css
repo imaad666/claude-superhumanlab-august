@@ -781,6 +781,31 @@
   cursor: wait;
 }
 
+.lesson-assigned {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1.5px dashed rgba(214, 90, 31, 0.4);
+  border-radius: var(--radius-md);
+  background: rgba(245, 212, 184, 0.35);
+}
+
+.lesson-assigned-label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-deep);
+}
+
+.lesson-bank-chip.is-assigned {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
 .lesson-custom {
   display: flex;
   flex-wrap: wrap;

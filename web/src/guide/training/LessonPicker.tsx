@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { bankFor } from "./bank";
+import { getAssignedSet } from "../../slp/store";
+import { bankFor, findBankLesson } from "./bank";
 import type { LessonKind, LessonMemory } from "./types";
 
 type LessonPickerProps = {
@@ -20,6 +21,12 @@ export function LessonPicker({
   const [custom, setCustom] = useState("");
   const bank = bankFor(kind);
 
+  const assignedWords = kind === "word" ? getAssignedSet()?.words ?? [] : [];
+  const assignedBy = getAssignedSet()?.assignedBy;
+  const assignedLessons = assignedWords
+    .map((w) => findBankLesson(w, "word"))
+    .filter((l): l is LessonMemory => Boolean(l));
+
   return (
     <section className="guide-panel lesson-picker">
       <header className="guide-panel-head">
@@ -28,6 +35,28 @@ export function LessonPicker({
       </header>
 
       <div className="lesson-picker-body">
+        {assignedLessons.length > 0 && (
+          <div className="lesson-assigned">
+            <p className="lesson-assigned-label">
+              {assignedBy === "SLP" ? "From your SLP" : "Practice next"}
+            </p>
+            <div className="lesson-bank" role="list" aria-label="Assigned words">
+              {assignedLessons.map((item) => (
+                <button
+                  key={`assigned-${item.text}`}
+                  type="button"
+                  role="listitem"
+                  className="lesson-bank-chip is-assigned"
+                  disabled={busy}
+                  onClick={() => onPick(item)}
+                >
+                  {item.text}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <p className="insight-summary muted">
           Watch the mouth shapes, then recreate them. Starter bank works
           offline; custom text builds a lesson with the local model.

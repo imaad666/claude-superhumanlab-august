@@ -21,6 +21,7 @@ import {
 } from "./hooks/useSessionRecorder";
 import { useSpectrogram } from "./hooks/useSpectrogram";
 import type { SessionAnalysis } from "./sessionTypes";
+import { findBankLesson } from "./training/bank";
 import { LessonPicker } from "./training/LessonPicker";
 import { LessonPlayer } from "./training/LessonPlayer";
 import type { TrainerMode } from "./training/types";
@@ -31,11 +32,18 @@ import "./GuideDashboard.css";
 
 type GuideDashboardProps = {
   mode: GuideMode;
+  /** Word to jump straight into, e.g. from the SLP dashboard's assigned set. */
+  initialWord?: string | null;
 };
 
-export function GuideDashboard({ mode }: GuideDashboardProps) {
+export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
   const isLive = mode === "live";
-  const [trainerMode, setTrainerMode] = useState<TrainerMode>("free");
+  const [trainerMode, setTrainerMode] = useState<TrainerMode>(
+    !isLive && initialWord ? "word" : "free",
+  );
+  const [pendingWord, setPendingWord] = useState<string | null>(
+    !isLive ? initialWord ?? null : null,
+  );
   const isLearn = !isLive && trainerMode !== "free";
 
   const [active, setActive] = useState(false);
@@ -181,6 +189,25 @@ export function GuideDashboard({ mode }: GuideDashboardProps) {
     setLearnCam(false);
     setCoachTarget(null);
   }, []);
+
+  // Re-arm when navigated in with a new assigned word while already mounted.
+  useEffect(() => {
+    if (!isLive && initialWord) setPendingWord(initialWord);
+  }, [isLive, initialWord]);
+
+  // Consume a preloaded word: switch to Learn-a-word, then auto-start it once
+  // the lesson session has reset to the pick phase.
+  useEffect(() => {
+    if (isLive || !pendingWord) return;
+    if (trainerMode !== "word") {
+      setTrainer("word");
+      return;
+    }
+    if (lesson.phase !== "pick") return;
+    const mem = findBankLesson(pendingWord, "word");
+    if (mem) lesson.startLesson(mem);
+    setPendingWord(null);
+  }, [isLive, pendingWord, trainerMode, lesson.phase, lesson.startLesson, setTrainer]);
 
   const toggleActive = useCallback(() => {
     if (!active && isLive) {

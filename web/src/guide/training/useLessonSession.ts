@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logLessonAttempt } from "../../slp/store";
 import type { LipFeatures } from "../features";
 import { demoLandmarksForViseme } from "./demoLandmarks";
 import { fetchLesson } from "./fetchLesson";
@@ -144,6 +145,9 @@ export function useLessonSession(
         const attempt = scoreAttempt(lesson, bestRef.current);
         setResult(attempt);
         setPhase("result");
+        // Log per-phoneme attempts for the SLP dashboard — reads the scoring
+        // output the trainer already produced, touches nothing upstream.
+        logLessonAttempt(lesson, attempt);
         return;
       }
       setStepIndex((i) => i + 1);
