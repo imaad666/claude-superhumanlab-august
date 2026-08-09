@@ -1,6 +1,6 @@
 import { scoreQuality } from "../guide/training/scoreStep";
 import type { LessonAttemptResult, LessonMemory } from "../guide/training/types";
-import type { AssignedSet, Attempt, Session } from "./types";
+import type { AssignedSet, Attempt, Session, TherapyPlan } from "./types";
 
 /**
  * localStorage-backed store for the SLP Guide. No backend / auth for the demo —
@@ -10,6 +10,7 @@ import type { AssignedSet, Attempt, Session } from "./types";
 
 const SESSIONS_KEY = "slp.sessions.v1";
 const ASSIGNED_KEY = "slp.assigned.v1";
+const PLAN_KEY = "slp.plan.v1";
 
 /** Fired whenever sessions or the assigned set change, so open views refresh. */
 export const SLP_EVENT = "slp:updated";
@@ -102,10 +103,24 @@ export function setAssignedSet(set: AssignedSet | null) {
   emitUpdate();
 }
 
+/** The SLP's current session plan — one active plan, no per-learner records yet. */
+export function getPlan(): TherapyPlan | null {
+  if (!hasStorage()) return null;
+  return safeParse<TherapyPlan | null>(localStorage.getItem(PLAN_KEY), null);
+}
+
+export function setPlan(plan: TherapyPlan | null) {
+  if (!hasStorage()) return;
+  if (plan) localStorage.setItem(PLAN_KEY, JSON.stringify(plan));
+  else localStorage.removeItem(PLAN_KEY);
+  emitUpdate();
+}
+
 /** Demo helper — wipe all progress and any SLP override. */
 export function resetSlp() {
   if (!hasStorage()) return;
   localStorage.removeItem(SESSIONS_KEY);
   localStorage.removeItem(ASSIGNED_KEY);
+  localStorage.removeItem(PLAN_KEY);
   emitUpdate();
 }

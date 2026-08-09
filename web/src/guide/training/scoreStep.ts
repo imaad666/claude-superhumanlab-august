@@ -78,7 +78,6 @@ export function scoreStep(
     widthErr,
     roundnessErr,
     match,
-    volume,
     voiceOk,
     spokenHit,
   );
@@ -102,7 +101,6 @@ function shortfallCue(
   wErr: number,
   rErr: number,
   match: StepScore["match"],
-  volume: number,
   voiceOk: boolean,
   spokenHit: boolean,
 ): string {
