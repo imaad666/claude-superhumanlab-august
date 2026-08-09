@@ -9,6 +9,7 @@ function step(
   viseme: VisemeId,
   holdMs = 700,
   cueOverride?: string,
+  phoneme?: string,
 ): LessonStep {
   const guide = VISEMES.find((v) => v.id === viseme);
   return {
@@ -19,6 +20,7 @@ function step(
     cue: cueOverride ?? guide?.cue ?? "Match the coach mouth",
     targets: targetsFor(viseme),
     holdMs,
+    phoneme,
   };
 }
 
@@ -27,8 +29,9 @@ function lesson(
   kind: LessonKind,
   tip: string,
   steps: LessonStep[],
+  extra?: Partial<Pick<LessonMemory, "targetPhoneme" | "contrast">>,
 ): LessonMemory {
-  return { text, kind, tip, steps, source: "bank" };
+  return { text, kind, tip, steps, source: "bank", ...extra };
 }
 
 export const WORD_BANK: LessonMemory[] = [
@@ -94,6 +97,185 @@ export const WORD_BANK: LessonMemory[] = [
     step("friend-3", "E", "eh", "E", 500),
     step("friend-4", "ND", "nd", "L", 600),
   ]),
+
+  // --- SLP minimal pairs — real clinical contrasts, one target phoneme each.
+  // Contrast 1 · SH vs CH
+  lesson(
+    "ship",
+    "word",
+    "Push lips forward for a soft, long “shh”.",
+    [
+      step("ship-1", "SH", "shh", "U", 600, "Lips forward, soft steady air", "SH"),
+      step("ship-2", "IP", "ip", "I", 550, undefined, "IH"),
+    ],
+    { targetPhoneme: "SH", contrast: "SH vs CH" },
+  ),
+  lesson(
+    "chip",
+    "word",
+    "Tongue tip first, then a quick “ch” burst.",
+    [
+      step("chip-1", "CH", "chh", "L", 520, "Tongue tip up, then release", "CH"),
+      step("chip-2", "IP", "ip", "I", 550, undefined, "IH"),
+    ],
+    { targetPhoneme: "CH", contrast: "SH vs CH" },
+  ),
+  lesson(
+    "wash",
+    "word",
+    "Round “wah”, open, then a long “shh”.",
+    [
+      step("wash-1", "W", "wah", "U", 500, "Tight round start", "W"),
+      step("wash-2", "AH", "ah", "A", 500, undefined, "AH"),
+      step("wash-3", "SH", "shh", "U", 600, "Lips forward, soft air", "SH"),
+    ],
+    { targetPhoneme: "SH", contrast: "SH vs CH" },
+  ),
+  lesson(
+    "watch",
+    "word",
+    "Round “wah”, open, then a quick “ch”.",
+    [
+      step("watch-1", "W", "wah", "U", 500, "Tight round start", "W"),
+      step("watch-2", "AH", "ah", "A", 500, undefined, "AH"),
+      step("watch-3", "CH", "chh", "L", 520, "Tongue tip, then release", "CH"),
+    ],
+    { targetPhoneme: "CH", contrast: "SH vs CH" },
+  ),
+
+  // Contrast 2 · P vs B
+  lesson(
+    "pat",
+    "word",
+    "Lips together, quiet pop, then tongue tap.",
+    [
+      step("pat-1", "P", "p", "M", 450, "Lips together — quiet pop", "P"),
+      step("pat-2", "A", "aa", "A", 550, undefined, "AE"),
+      step("pat-3", "T", "t", "L", 400, "Tongue tip tap", "T"),
+    ],
+    { targetPhoneme: "P", contrast: "P vs B" },
+  ),
+  lesson(
+    "bat",
+    "word",
+    "Lips together with voice, then tongue tap.",
+    [
+      step("bat-1", "B", "b", "M", 450, "Lips together — add voice", "B"),
+      step("bat-2", "A", "aa", "A", 550, undefined, "AE"),
+      step("bat-3", "T", "t", "L", 400, "Tongue tip tap", "T"),
+    ],
+    { targetPhoneme: "B", contrast: "P vs B" },
+  ),
+  lesson(
+    "pig",
+    "word",
+    "Quiet pop, short “ih”, soft back close.",
+    [
+      step("pig-1", "P", "p", "M", 450, "Lips together — quiet pop", "P"),
+      step("pig-2", "I", "ih", "I", 500, undefined, "IH"),
+      step("pig-3", "G", "g", "A", 450, "Soft back close", "G"),
+    ],
+    { targetPhoneme: "P", contrast: "P vs B" },
+  ),
+  lesson(
+    "big",
+    "word",
+    "Voiced start, short “ih”, soft back close.",
+    [
+      step("big-1", "B", "b", "M", 450, "Lips together — add voice", "B"),
+      step("big-2", "I", "ih", "I", 500, undefined, "IH"),
+      step("big-3", "G", "g", "A", 450, "Soft back close", "G"),
+    ],
+    { targetPhoneme: "B", contrast: "P vs B" },
+  ),
+
+  // Contrast 3 · TH vs F
+  lesson(
+    "thin",
+    "word",
+    "Tongue near your teeth, soft air for “th”.",
+    [
+      step("thin-1", "TH", "th", "F", 550, "Tongue near teeth, soft air", "TH"),
+      step("thin-2", "IN", "in", "I", 550, undefined, "IH"),
+    ],
+    { targetPhoneme: "TH", contrast: "TH vs F" },
+  ),
+  lesson(
+    "fin",
+    "word",
+    "Upper teeth on lower lip for “f”.",
+    [
+      step("fin-1", "F", "ff", "F", 500, "Teeth lightly on lip", "F"),
+      step("fin-2", "IN", "in", "I", 550, undefined, "IH"),
+    ],
+    { targetPhoneme: "F", contrast: "TH vs F" },
+  ),
+  lesson(
+    "three",
+    "word",
+    "Soft “th”, small round “r”, wide “ee”.",
+    [
+      step("three-1", "TH", "th", "F", 550, "Tongue near teeth, soft air", "TH"),
+      step("three-2", "R", "r", "U", 450, "Round the lips a little", "R"),
+      step("three-3", "EE", "ee", "I", 600, "Wide flat smile", "EE"),
+    ],
+    { targetPhoneme: "TH", contrast: "TH vs F" },
+  ),
+  lesson(
+    "free",
+    "word",
+    "Teeth on lip, small round “r”, wide “ee”.",
+    [
+      step("free-1", "F", "ff", "F", 500, "Teeth lightly on lip", "F"),
+      step("free-2", "R", "r", "U", 450, "Round the lips a little", "R"),
+      step("free-3", "EE", "ee", "I", 600, "Wide flat smile", "EE"),
+    ],
+    { targetPhoneme: "F", contrast: "TH vs F" },
+  ),
+
+  // Contrast 4 · S vs SH
+  lesson(
+    "sock",
+    "word",
+    "Wide thin “sss”, open “ah”, soft close.",
+    [
+      step("sock-1", "S", "sss", "I", 550, "Lips wide, thin stream of air", "S"),
+      step("sock-2", "O", "ah", "A", 500, undefined, "AH"),
+      step("sock-3", "CK", "k", "A", 400, "Soft back close", "K"),
+    ],
+    { targetPhoneme: "S", contrast: "S vs SH" },
+  ),
+  lesson(
+    "shock",
+    "word",
+    "Lips forward “shh”, open “ah”, soft close.",
+    [
+      step("shock-1", "SH", "shh", "U", 600, "Lips forward, soft air", "SH"),
+      step("shock-2", "O", "ah", "A", 500, undefined, "AH"),
+      step("shock-3", "CK", "k", "A", 400, "Soft back close", "K"),
+    ],
+    { targetPhoneme: "SH", contrast: "S vs SH" },
+  ),
+  lesson(
+    "sue",
+    "word",
+    "Wide thin “sss” into a tight round “oo”.",
+    [
+      step("sue-1", "S", "sss", "I", 550, "Lips wide, thin stream of air", "S"),
+      step("sue-2", "OO", "oo", "U", 700, "Tight round, push forward", "OO"),
+    ],
+    { targetPhoneme: "S", contrast: "S vs SH" },
+  ),
+  lesson(
+    "shoe",
+    "word",
+    "Lips forward “shh” into a tight round “oo”.",
+    [
+      step("shoe-1", "SH", "shh", "U", 600, "Lips forward, soft air", "SH"),
+      step("shoe-2", "OO", "oo", "U", 700, "Tight round, push forward", "OO"),
+    ],
+    { targetPhoneme: "SH", contrast: "S vs SH" },
+  ),
 ];
 
 export const SENTENCE_BANK: LessonMemory[] = [
@@ -149,6 +331,23 @@ export const SENTENCE_BANK: LessonMemory[] = [
 
 export function bankFor(kind: LessonKind): LessonMemory[] {
   return kind === "word" ? WORD_BANK : SENTENCE_BANK;
+}
+
+/**
+ * Words the SLP loop can assign — the minimal-pair set, each tagged with the
+ * single consonant contrast it trains. Drives algorithm auto-assignment and
+ * the SLP's manual picker.
+ */
+export function assignableWords(): {
+  text: string;
+  targetPhoneme: string;
+  contrast: string;
+}[] {
+  return WORD_BANK.filter((l) => l.targetPhoneme).map((l) => ({
+    text: l.text,
+    targetPhoneme: l.targetPhoneme as string,
+    contrast: l.contrast ?? "",
+  }));
 }
 
 export function findBankLesson(

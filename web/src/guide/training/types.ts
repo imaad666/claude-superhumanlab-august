@@ -24,6 +24,8 @@ export type LessonStep = {
   cue: string;
   targets: StepTargets;
   holdMs: number;
+  /** Readable phoneme tag for SLP progress logging, e.g. "SH", "TH", "IH". */
+  phoneme?: string;
 };
 
 export type LessonMemory = {
@@ -32,6 +34,10 @@ export type LessonMemory = {
   steps: LessonStep[];
   tip: string;
   source?: "bank" | "ollama" | "heuristic";
+  /** The consonant contrast this word trains, e.g. "SH" (for SH vs CH). */
+  targetPhoneme?: string;
+  /** Human label for the minimal-pair contrast, e.g. "SH vs CH". */
+  contrast?: string;
 };
 
 export type StepScore = {

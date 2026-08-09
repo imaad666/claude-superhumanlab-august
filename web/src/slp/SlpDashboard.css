@@ -1,0 +1,382 @@
+.slp {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.slp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.slp-viewswitch {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: 3px;
+  background: var(--bg-sunken);
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+.slp-view-chip {
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.slp-view-chip.is-active {
+  background: var(--bg-elevated);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(90, 52, 24, 0.12);
+}
+
+.slp-hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.slp-hero .lede {
+  max-width: 62ch;
+}
+
+/* Stat tiles */
+.slp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+}
+
+.slp-stat {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slp-stat-num {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.slp-stat-num.is-good {
+  color: var(--success);
+}
+.slp-stat-num.is-close {
+  color: var(--warn);
+}
+.slp-stat-num.is-weak {
+  color: var(--gentle);
+}
+
+.slp-stat-label {
+  font-size: 0.82rem;
+  color: var(--ink-tertiary);
+}
+
+/* Cards */
+.slp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.slp-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5, 20px);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.slp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.slp-card-head h2 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--ink);
+  margin: 0;
+}
+
+.slp-pill {
+  font-size: 0.74rem;
+  color: var(--ink-secondary);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.slp-subhead {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-secondary);
+  margin: var(--space-2) 0 0;
+}
+
+.slp-note {
+  font-size: 0.86rem;
+  color: var(--ink-secondary);
+  margin: 0;
+}
+
+.slp-empty {
+  font-size: 0.9rem;
+  color: var(--ink-tertiary);
+  margin: 0;
+}
+
+/* Trend line */
+.slp-trend {
+  width: 100%;
+  height: auto;
+}
+.slp-trend-path {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.slp-trend-dot {
+  fill: var(--accent-deep);
+}
+.slp-trend-grid {
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 4;
+  stroke-width: 1;
+}
+.slp-trend-label {
+  fill: var(--ink-secondary);
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+/* Phoneme bars */
+.slp-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.slp-bar-row {
+  display: grid;
+  grid-template-columns: 2.6rem 1fr 2rem 2rem;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.82rem;
+}
+
+.slp-bar-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.slp-bar-track {
+  height: 10px;
+  background: var(--bg-sunken);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.slp-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.slp-bar-fill.is-good {
+  background: var(--success);
+}
+.slp-bar-fill.is-close {
+  background: var(--warn);
+}
+.slp-bar-fill.is-weak {
+  background: var(--gentle);
+}
+
+.slp-bar-val {
+  font-family: var(--font-mono);
+  color: var(--ink-secondary);
+  text-align: right;
+}
+.slp-bar-count {
+  font-size: 0.72rem;
+  color: var(--ink-tertiary);
+  text-align: right;
+}
+
+/* Word buttons */
+.slp-words {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.slp-word-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  transition: border-color 0.15s, transform 0.1s, background 0.15s;
+}
+.slp-word-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.slp-word-btn:active {
+  transform: translateY(1px);
+}
+.slp-word-text {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}
+.slp-word-go {
+  font-size: 0.82rem;
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+/* SLP contrast picker */
+.slp-contrasts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.slp-contrast-label {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-tertiary);
+  margin: 0 0 var(--space-1);
+}
+.slp-words-compact {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.slp-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-sunken);
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--ink);
+  transition: border-color 0.15s, background 0.15s;
+}
+.slp-pick.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.slp-pick-score {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+}
+.slp-pick-score.is-good {
+  color: var(--success);
+}
+.slp-pick-score.is-close {
+  color: var(--warn);
+}
+.slp-pick-score.is-weak {
+  color: var(--gentle);
+}
+
+.slp-assign-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+/* Local copy of btn-compact — GuideDashboard.css isn't loaded on this route. */
+.slp .btn-compact {
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.9rem;
+}
+
+/* Footer */
+.slp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-4);
+}
+.slp-foot-note {
+  font-size: 0.78rem;
+  color: var(--ink-tertiary);
+  margin: 0;
+  max-width: 48ch;
+}
+.slp-reset {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--ink-tertiary);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+.slp-reset:hover {
+  color: var(--gentle);
+  border-color: var(--gentle);
+}
+
+@media (max-width: 680px) {
+  .slp-grid {
+    grid-template-columns: 1fr;
+  }
+  .slp-stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
