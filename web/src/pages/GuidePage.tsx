@@ -20,8 +20,8 @@ export function GuidePage() {
         <Link className="path" to="/guide/trainer">
           <span className="path-title">Personal Trainer</span>
           <span className="path-desc">
-            Watch mouth shapes for a word or sentence, then recreate them —
-            plus free practice with live coaching.
+            Camera reads your lips and guides each sound of a word or sentence
+            live — plus free practice anytime.
           </span>
           <span className="btn btn-accent btn-in-card">Start practice →</span>
         </Link>
@@ -29,8 +29,8 @@ export function GuidePage() {
         <Link className="path" to="/guide/live">
           <span className="path-title">Live Guide</span>
           <span className="path-desc">
-            Point the camera at a teacher or friend, record the moment, then
-            review tone, emphasis, and speech patterns after.
+            Record a teacher speaking — Gemma turns the clip into word lessons
+            with their real MediaPipe mouth shapes for practice.
           </span>
           <span className="btn btn-primary btn-in-card">Record a session →</span>
         </Link>

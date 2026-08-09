@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { logLessonAttempt } from "../../slp/store";
 import type { LipFeatures } from "../features";
-import { demoLandmarksForViseme } from "./demoLandmarks";
 import { fetchLesson } from "./fetchLesson";
-import { scoreAttempt, scoreStep, shapeDistance } from "./scoreStep";
+import { isVoiceActive, scoreAttempt, scoreStep, shapeDistance } from "./scoreStep";
 import type {
   LessonAttemptResult,
   LessonKind,
@@ -14,13 +13,19 @@ import type {
 
 type LiveSample = { lips: LipFeatures; volume: number };
 
+const GOOD_HOLD_MS = 520;
+const MAX_STEP_MS = 6000;
+
 /**
- * Watch → recreate → result session for Learn Word / Learn Sentence.
+ * Camera-first live guide: lips + voice → coach each sound → validate.
+ * Logs finished attempts to the SLP store for progress.
  */
 export function useLessonSession(
   trainerMode: TrainerMode,
   lips: LipFeatures,
   volume: number,
+  trackingReady: boolean,
+  spokenHint = "",
 ) {
   const kind: LessonKind | null =
     trainerMode === "word"
@@ -35,14 +40,18 @@ export function useLessonSession(
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<LessonAttemptResult | null>(null);
+  const [goodMs, setGoodMs] = useState(0);
 
   const bestRef = useRef<Array<LiveSample | null>>([]);
   const lipsRef = useRef(lips);
   const volumeRef = useRef(volume);
+  const spokenRef = useRef(spokenHint);
+  const goodSinceRef = useRef<number | null>(null);
+  const advancingRef = useRef(false);
   lipsRef.current = lips;
   volumeRef.current = volume;
+  spokenRef.current = spokenHint;
 
-  // Reset when switching trainer mode chips
   useEffect(() => {
     setPhase("pick");
     setLesson(null);
@@ -50,16 +59,21 @@ export function useLessonSession(
     setBusy(false);
     setError(null);
     setResult(null);
+    setGoodMs(0);
     bestRef.current = [];
+    goodSinceRef.current = null;
   }, [trainerMode]);
 
-  const startLesson = useCallback((mem: LessonMemory) => {
+  const startGuide = useCallback((mem: LessonMemory) => {
     setLesson(mem);
-    setPhase("watch");
+    setPhase("guide");
     setStepIndex(0);
     setResult(null);
     setError(null);
+    setGoodMs(0);
     bestRef.current = mem.steps.map(() => null);
+    goodSinceRef.current = null;
+    advancingRef.current = false;
   }, []);
 
   const buildCustom = useCallback(
@@ -69,23 +83,20 @@ export function useLessonSession(
       setError(null);
       try {
         const mem = await fetchLesson(text, kind);
-        startLesson(mem);
+        startGuide(mem);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not build lesson");
       } finally {
         setBusy(false);
       }
     },
-    [kind, startLesson],
+    [kind, startGuide],
   );
 
-  const watchAgain = useCallback(() => {
+  const retry = useCallback(() => {
     if (!lesson) return;
-    setPhase("watch");
-    setStepIndex(0);
-    setResult(null);
-    bestRef.current = lesson.steps.map(() => null);
-  }, [lesson]);
+    startGuide(lesson);
+  }, [lesson, startGuide]);
 
   const backToPick = useCallback(() => {
     setPhase("pick");
@@ -93,83 +104,91 @@ export function useLessonSession(
     setStepIndex(0);
     setResult(null);
     setError(null);
+    setGoodMs(0);
+    goodSinceRef.current = null;
   }, []);
 
-  const beginRecreate = useCallback(() => {
-    if (!lesson) return;
-    setPhase("recreate");
-    setStepIndex(0);
-    setResult(null);
-    bestRef.current = lesson.steps.map(() => null);
-  }, [lesson]);
+  const finish = useCallback((mem: LessonMemory) => {
+    const attempt = scoreAttempt(mem, bestRef.current);
+    setResult(attempt);
+    setPhase("result");
+    setGoodMs(0);
+    goodSinceRef.current = null;
+    // SLP dashboard progress — phoneme attempts from this lesson.
+    logLessonAttempt(mem, attempt);
+  }, []);
 
-  // Watch phase: autoplay steps
+  const advance = useCallback(() => {
+    if (!lesson || advancingRef.current) return;
+    advancingRef.current = true;
+    if (stepIndex >= lesson.steps.length - 1) {
+      finish(lesson);
+      return;
+    }
+    setStepIndex((i) => i + 1);
+    setGoodMs(0);
+    goodSinceRef.current = null;
+    window.setTimeout(() => {
+      advancingRef.current = false;
+    }, 120);
+  }, [lesson, stepIndex, finish]);
+
+  const currentStep = lesson?.steps[stepIndex] ?? null;
+
+  const liveScore = useMemo(() => {
+    if (phase !== "guide" || !currentStep) return null;
+    return scoreStep(currentStep, lips, volume, spokenHint);
+  }, [phase, currentStep, lips, volume, spokenHint]);
+
+  // Live guide: sample lips+voice; advance when held "good"
   useEffect(() => {
-    if (phase !== "watch" || !lesson) return;
-    const step = lesson.steps[stepIndex];
-    if (!step) return;
-    const hold = step.holdMs || 650;
-    const id = window.setTimeout(() => {
-      if (stepIndex >= lesson.steps.length - 1) {
-        // stay on last step until user clicks I'm ready
-        return;
-      }
-      setStepIndex((i) => i + 1);
-    }, hold);
-    return () => window.clearTimeout(id);
-  }, [phase, lesson, stepIndex]);
+    if (phase !== "guide" || !lesson || !currentStep) return;
 
-  // Recreate phase: sample best lips per step, advance on timer
-  useEffect(() => {
-    if (phase !== "recreate" || !lesson) return;
-    const step = lesson.steps[stepIndex];
-    if (!step) return;
-
+    const stepStarted = Date.now();
     const sampleId = window.setInterval(() => {
+      if (!trackingReady) return;
+
       const sample = {
         lips: { ...lipsRef.current },
         volume: volumeRef.current,
       };
       const prev = bestRef.current[stepIndex];
+      const scoreNow = scoreStep(
+        currentStep,
+        sample.lips,
+        sample.volume,
+        spokenRef.current,
+      );
       if (
         !prev ||
-        shapeDistance(sample.lips, step) < shapeDistance(prev.lips, step)
+        shapeDistance(sample.lips, currentStep) <
+          shapeDistance(prev.lips, currentStep) ||
+        sample.volume > prev.volume + 0.02
       ) {
         bestRef.current[stepIndex] = sample;
       }
+
+      const now = Date.now();
+
+      if (scoreNow.match === "good") {
+        if (goodSinceRef.current == null) goodSinceRef.current = now;
+        const held = now - goodSinceRef.current;
+        setGoodMs(held);
+        if (held >= GOOD_HOLD_MS) {
+          advance();
+        }
+      } else {
+        goodSinceRef.current = null;
+        setGoodMs(0);
+      }
+
+      if (now - stepStarted >= MAX_STEP_MS) {
+        advance();
+      }
     }, 80);
 
-    const hold = Math.max(900, (step.holdMs || 650) + 350);
-    const advanceId = window.setTimeout(() => {
-      if (stepIndex >= lesson.steps.length - 1) {
-        const attempt = scoreAttempt(lesson, bestRef.current);
-        setResult(attempt);
-        setPhase("result");
-        // Log per-phoneme attempts for the SLP dashboard — reads the scoring
-        // output the trainer already produced, touches nothing upstream.
-        logLessonAttempt(lesson, attempt);
-        return;
-      }
-      setStepIndex((i) => i + 1);
-    }, hold);
-
-    return () => {
-      window.clearInterval(sampleId);
-      window.clearTimeout(advanceId);
-    };
-  }, [phase, lesson, stepIndex]);
-
-  const currentStep = lesson?.steps[stepIndex] ?? null;
-
-  const demoLandmarks = useMemo(() => {
-    if (phase !== "watch" || !currentStep) return null;
-    return demoLandmarksForViseme(currentStep.viseme);
-  }, [phase, currentStep]);
-
-  const liveScore = useMemo(() => {
-    if (phase !== "recreate" || !currentStep) return null;
-    return scoreStep(currentStep, lips, volume);
-  }, [phase, currentStep, lips, volume]);
+    return () => window.clearInterval(sampleId);
+  }, [phase, lesson, currentStep, stepIndex, trackingReady, advance]);
 
   return {
     kind,
@@ -180,13 +199,15 @@ export function useLessonSession(
     error,
     result,
     currentStep,
-    demoLandmarks,
     liveScore,
-    startLesson,
+    goodMs,
+    goodHoldMs: GOOD_HOLD_MS,
+    voiceActive: isVoiceActive(volume),
+    volume,
+    startLesson: startGuide,
     buildCustom,
-    watchAgain,
+    retry,
     backToPick,
-    beginRecreate,
-    retry: beginRecreate,
+    advance,
   };
 }

@@ -6,11 +6,18 @@ type LessonPlayerProps = {
   stepIndex: number;
   liveCue?: string | null;
   liveMatch?: "good" | "close" | "try_again" | null;
+  shapeMatch?: "good" | "close" | "try_again" | null;
+  voiceOk?: boolean;
+  needsVoice?: boolean;
+  goodMs?: number;
+  goodHoldMs?: number;
+  trackingReady?: boolean;
+  volume?: number;
+  voiceActive?: boolean;
   result: LessonAttemptResult | null;
-  onWatchAgain: () => void;
-  onReady: () => void;
-  onBackToPick: () => void;
   onRetry: () => void;
+  onBackToPick: () => void;
+  onSkip?: () => void;
 };
 
 export function LessonPlayer({
@@ -19,14 +26,22 @@ export function LessonPlayer({
   stepIndex,
   liveCue,
   liveMatch,
+  shapeMatch = null,
+  voiceOk = false,
+  needsVoice = true,
+  goodMs = 0,
+  goodHoldMs = 520,
+  trackingReady = false,
+  volume = 0,
+  voiceActive = false,
   result,
-  onWatchAgain,
-  onReady,
-  onBackToPick,
   onRetry,
+  onBackToPick,
+  onSkip,
 }: LessonPlayerProps) {
   const step = lesson.steps[stepIndex] ?? lesson.steps[0];
-  const speakLine = lesson.steps.map((s) => s.speakAs).join(" · ");
+  const progress = Math.min(1, goodMs / goodHoldMs);
+  const volPct = Math.min(100, Math.round(volume * 100));
 
   return (
     <section className="guide-panel lesson-player">
@@ -34,14 +49,11 @@ export function LessonPlayer({
         <div>
           <h2>{lesson.text}</h2>
           <p className="guide-sub">
-            {phase === "watch"
-              ? "Watch"
-              : phase === "recreate"
-                ? "Your turn"
-                : phase === "result"
-                  ? "Result"
-                  : "Lesson"}
-            {lesson.source ? ` · ${lesson.source}` : ""}
+            {phase === "guide"
+              ? "Match the ghost lips · say the sound"
+              : phase === "result"
+                ? "Result"
+                : "Lesson"}
           </p>
         </div>
         <span className="guide-pill">
@@ -56,10 +68,8 @@ export function LessonPlayer({
           {lesson.steps.map((s, i) => (
             <span
               key={s.id}
-              className={`lesson-syll ${i === stepIndex && phase !== "result" ? "is-active" : ""} ${
-                result?.scores[i]
-                  ? `match-${result.scores[i].match}`
-                  : ""
+              className={`lesson-syll ${i === stepIndex && phase === "guide" ? "is-active" : ""} ${
+                result?.scores[i] ? `match-${result.scores[i].match}` : ""
               }`}
             >
               {s.speakAs}
@@ -68,19 +78,75 @@ export function LessonPlayer({
           ))}
         </p>
 
-        {phase !== "result" && step && (
+        {phase === "guide" && step && (
           <div className="lesson-step-card">
             <p className="lesson-step-label">
               <strong>{step.label}</strong>
               <span className="lesson-step-speak">“{step.speakAs}”</span>
             </p>
-            <p className="insight-cue">
-              {phase === "recreate" && liveCue ? liveCue : step.cue}
-            </p>
-            {phase === "recreate" && liveMatch && (
-              <p className={`coach-match match-${liveMatch}`}>
-                {liveMatch.replace("_", " ")}
+            <p className="insight-cue">{liveCue ?? step.cue}</p>
+
+            <div className="lesson-check-row" aria-label="Lips and voice checks">
+              <span
+                className={`lesson-check match-${shapeMatch ?? "try_again"}`}
+              >
+                Lips · {(shapeMatch ?? "try_again").replace("_", " ")}
+              </span>
+              <span
+                className={`lesson-check ${
+                  !needsVoice
+                    ? "match-good"
+                    : voiceOk
+                      ? "match-good"
+                      : "match-try_again"
+                }`}
+              >
+                {!needsVoice
+                  ? "Voice · optional"
+                  : voiceOk
+                    ? "Voice · heard"
+                    : "Voice · speak"}
+              </span>
+            </div>
+
+            <div className="lesson-voice" aria-label="Microphone level">
+              <span
+                className={`lesson-voice-dot ${voiceActive ? "is-hot" : ""}`}
+                aria-hidden
+              />
+              <span className="lesson-voice-label">
+                {voiceActive ? "Hearing you" : "Speak out loud"}
+              </span>
+              <div className="lesson-voice-track">
+                <div
+                  className={`lesson-voice-fill ${voiceActive ? "is-hot" : ""}`}
+                  style={{ width: `${volPct}%` }}
+                />
+              </div>
+              <span className="lesson-voice-val">{volPct}</span>
+            </div>
+
+            {!trackingReady && (
+              <p className="insight-summary muted">
+                Looking for your face — face the camera.
               </p>
+            )}
+            {trackingReady && liveMatch && (
+              <p className={`coach-match match-${liveMatch}`}>
+                Combined · {liveMatch.replace("_", " ")}
+              </p>
+            )}
+            {trackingReady && (
+              <div
+                className="lesson-good-bar"
+                aria-label="Hold the match"
+                title="Hold lips + voice to continue"
+              >
+                <div
+                  className="lesson-good-fill"
+                  style={{ width: `${Math.round(progress * 100)}%` }}
+                />
+              </div>
             )}
           </div>
         )}
@@ -97,6 +163,20 @@ export function LessonPlayer({
                   <span className={`insight-chip match-${sc.match}`}>
                     {sc.match.replace("_", " ")}
                   </span>
+                  <span className="lesson-score-checks">
+                    <span className={`insight-chip match-${sc.shapeMatch}`}>
+                      lips
+                    </span>
+                    <span
+                      className={`insight-chip ${
+                        !sc.needsVoice || sc.voiceOk
+                          ? "match-good"
+                          : "match-try_again"
+                      }`}
+                    >
+                      voice
+                    </span>
+                  </span>
                   <span className="lesson-score-cue">{sc.cue}</span>
                 </li>
               ))}
@@ -104,55 +184,24 @@ export function LessonPlayer({
           </div>
         )}
 
-        {phase === "watch" && (
-          <p className="insight-summary muted">{lesson.tip}</p>
-        )}
-
         <div className="session-actions">
-          {phase === "watch" && (
-            <>
-              <button
-                type="button"
-                className="btn btn-accent btn-compact"
-                onClick={onReady}
-              >
-                I’m ready
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-compact"
-                onClick={onWatchAgain}
-              >
-                Watch again
-              </button>
-            </>
-          )}
-          {phase === "recreate" && (
+          {phase === "guide" && onSkip && (
             <button
               type="button"
               className="btn btn-ghost btn-compact"
-              onClick={onWatchAgain}
+              onClick={onSkip}
             >
-              Watch again
+              Skip sound
             </button>
           )}
           {phase === "result" && (
-            <>
-              <button
-                type="button"
-                className="btn btn-accent btn-compact"
-                onClick={onRetry}
-              >
-                Try again
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-compact"
-                onClick={onWatchAgain}
-              >
-                Watch again
-              </button>
-            </>
+            <button
+              type="button"
+              className="btn btn-accent btn-compact"
+              onClick={onRetry}
+            >
+              Try again
+            </button>
           )}
           <button
             type="button"
@@ -162,11 +211,6 @@ export function LessonPlayer({
             Pick another
           </button>
         </div>
-
-        <p className="guide-sub lesson-speak-line" title={speakLine}>
-          {lesson.kind === "word" ? "Word" : "Sentence"} · {lesson.steps.length}{" "}
-          shapes
-        </p>
       </div>
     </section>
   );

@@ -1,12 +1,11 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { INNER_LIP, OUTER_LIP, lipMeshes3D, type Point } from "../lips";
+import { mediapipePoseForViseme } from "../training/visemePoses";
 
 type LipMesh3DProps = {
   landmarks: Point[] | null;
   tracking: boolean;
-  /** When true, show coach demo (no camera) empty state copy */
-  demo?: boolean;
   emptyHint?: string;
 };
 
@@ -14,17 +13,13 @@ const OUTER_N = OUTER_LIP.length;
 const INNER_N = INNER_LIP.length;
 /** Higher = snappier; lower = smoother / less jitter */
 const SMOOTH = 0.78;
+const REST_POSE = mediapipePoseForViseme("rest");
 
 /**
- * Soft MediaPipe lip surface. No wireframe/dots; orientation screen-locked;
- * drag to orbit. Positions are exponentially smoothed for calm motion.
+ * Soft MediaPipe lip surface — same mesh for live camera and Watch poses.
+ * Pose data must be real MediaPipe-topology landmarks (see visemePoses.ts).
  */
-export function LipMesh3D({
-  landmarks,
-  tracking,
-  demo = false,
-  emptyHint,
-}: LipMesh3DProps) {
+export function LipMesh3D({ landmarks, tracking, emptyHint }: LipMesh3DProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const landmarksRef = useRef(landmarks);
   const trackingRef = useRef(tracking);
@@ -42,7 +37,7 @@ export function LipMesh3D({
     scene.background = null;
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.01, 40);
-    camera.position.set(0, 0, 1.55);
+    camera.position.set(0, 0.02, 1.55);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -110,8 +105,8 @@ export function LipMesh3D({
     let dragging = false;
     let prevX = 0;
     let prevY = 0;
-    let rotY = 0;
-    let rotX = 0;
+    let rotY = 0.12;
+    let rotX = -0.06;
     let seeded = false;
 
     const onPointerDown = (e: PointerEvent) => {
@@ -158,23 +153,22 @@ export function LipMesh3D({
       const mesh = lipMeshes3D(lms, true);
       if (!mesh) return;
       const { outer, inner } = mesh;
-      if (outer.length < 9 || inner.length < 9) return;
+      if (outer.length < OUTER_N * 3 || inner.length < INNER_N * 3) return;
 
       ribbonTarget.set(outer);
-      ribbonTarget.set(inner, outer.length);
+      ribbonTarget.set(inner, OUTER_N * 3);
 
       let cx = 0;
       let cy = 0;
       let cz = 0;
-      const n = inner.length / 3;
-      for (let i = 0; i < n; i += 1) {
+      for (let i = 0; i < INNER_N; i += 1) {
         cx += inner[i * 3];
         cy += inner[i * 3 + 1];
         cz += inner[i * 3 + 2];
       }
-      cx /= n;
-      cy /= n;
-      cz /= n;
+      cx /= INNER_N;
+      cy /= INNER_N;
+      cz /= INNER_N;
       cavityTarget[0] = cx;
       cavityTarget[1] = cy;
       cavityTarget[2] = cz - 0.015;
@@ -205,14 +199,24 @@ export function LipMesh3D({
       const lms = landmarksRef.current;
       if (trackingRef.current && lms?.length) {
         setTargetFromLandmarks(lms);
-        if (seeded) {
-          lerpBuf(ribbonPos, ribbonTarget, SMOOTH);
-          lerpBuf(cavityPos, cavityTarget, SMOOTH);
-          ribbonGeo.attributes.position.needsUpdate = true;
-          cavityGeo.attributes.position.needsUpdate = true;
-          ribbonGeo.computeVertexNormals();
-          cavityGeo.computeVertexNormals();
-        }
+      } else {
+        setTargetFromLandmarks(REST_POSE);
+      }
+      if (seeded) {
+        lerpBuf(
+          ribbonPos,
+          ribbonTarget,
+          trackingRef.current ? SMOOTH : 0.14,
+        );
+        lerpBuf(
+          cavityPos,
+          cavityTarget,
+          trackingRef.current ? SMOOTH : 0.14,
+        );
+        ribbonGeo.attributes.position.needsUpdate = true;
+        cavityGeo.attributes.position.needsUpdate = true;
+        ribbonGeo.computeVertexNormals();
+        cavityGeo.computeVertexNormals();
       }
 
       renderer.render(scene, camera);
@@ -237,14 +241,11 @@ export function LipMesh3D({
     };
   }, []);
 
-  const showEmpty = !tracking;
-  const hint =
-    emptyHint ??
-    (demo ? "Watch the mouth shapes" : "Press Start");
-
   return (
     <div className="lip-mesh3d" ref={mountRef}>
-      {showEmpty && <p className="lip-mesh3d-empty">{hint}</p>}
+      {!tracking && emptyHint ? (
+        <p className="lip-mesh3d-empty">{emptyHint}</p>
+      ) : null}
     </div>
   );
 }

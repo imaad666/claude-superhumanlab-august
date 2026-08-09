@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ExpressionFeatures, LipFeatures } from "../features";
 import type { Point } from "../lips";
+import { mediapipePoseForViseme } from "../training/visemePoses";
 import { VISEMES, type VisemeId } from "../visemes";
-import { CoachLipMesh3D } from "./CoachLipMesh3D";
 import { LipMesh3D } from "./LipMesh3D";
 
 type LipCoachPanelProps = {
@@ -31,6 +31,7 @@ export function LipCoachPanel({
   lipMatch,
   onSelectTarget,
   forcedViseme = null,
+  demoLandmarks = null,
   demo = false,
   hidePicks = false,
   headerTitle = "Lip coach",
@@ -65,6 +66,13 @@ export function LipCoachPanel({
     return guide?.cue ?? "";
   }, [brainCue, guide]);
 
+  // Teacher capture / synthetic watch pose, else live camera landmarks.
+  const poseLandmarks = useMemo(() => {
+    if (demoLandmarks?.length) return demoLandmarks;
+    if (!demo) return landmarks;
+    return mediapipePoseForViseme(activeViseme);
+  }, [demo, demoLandmarks, activeViseme, landmarks]);
+
   return (
     <section className="guide-panel coach-panel">
       <header className="guide-panel-head">
@@ -78,15 +86,13 @@ export function LipCoachPanel({
       </header>
 
       <div className="coach-stack">
-        {demo ? (
-          <CoachLipMesh3D
-            openness={lips.openness}
-            width={lips.width}
-            roundness={lips.roundness}
-          />
-        ) : (
-          <LipMesh3D landmarks={landmarks} tracking={tracking} />
-        )}
+        <LipMesh3D
+          landmarks={poseLandmarks}
+          tracking={Boolean(demo || demoLandmarks?.length || tracking)}
+          emptyHint={
+            demo || demoLandmarks?.length ? "Loading mouth pose…" : undefined
+          }
+        />
 
         <p className="coach-metrics">
           {demo && guide ? (

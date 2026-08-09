@@ -5,11 +5,46 @@ function clamp01(n: number) {
   return Math.min(1, Math.max(0, n));
 }
 
-/** Compare live lips to a lesson step — encouraging, never harsh. */
+/** Quiet closures (M) vs voiced vowels/sounds that need audible voice. */
+export function stepNeedsVoice(step: LessonStep): boolean {
+  const v = step.targets.volume ?? 0.1;
+  if (step.viseme === "M" || step.viseme === "rest") return false;
+  return v > 0.045;
+}
+
+function needsVoice(step: LessonStep): boolean {
+  return stepNeedsVoice(step);
+}
+
+function voiceHeard(step: LessonStep, volume: number, spokenHit: boolean): boolean {
+  if (spokenHit) return true;
+  if (!needsVoice(step)) {
+    // Closures: silence is fine; loud is also fine.
+    return true;
+  }
+  // Laptop mics after gain boost — speaking should clear ~0.06+.
+  const floor = Math.max(0.055, (step.targets.volume ?? 0.1) * 0.45);
+  return volume >= floor;
+}
+
+function spokenMatches(step: LessonStep, spokenHint: string): boolean {
+  const raw = spokenHint.toLowerCase().replace(/[^a-z\s']/g, " ");
+  if (!raw.trim()) return false;
+  const needles = [step.speakAs, step.label, step.viseme]
+    .map((s) => s.toLowerCase().replace(/[^a-z']/g, ""))
+    .filter((s) => s.length >= 1);
+  return needles.some((n) => n.length >= 2 && raw.includes(n));
+}
+
+/**
+ * Compare live lips + voice to a lesson step.
+ * Shape and sound both matter for voiced targets.
+ */
 export function scoreStep(
   step: LessonStep,
   lips: LipFeatures,
   volume = 0,
+  spokenHint = "",
 ): StepScore {
   const t = step.targets;
   const opennessErr = Math.abs(lips.openness - t.openness);
@@ -17,20 +52,42 @@ export function scoreStep(
   const roundnessErr = Math.abs(lips.roundness - t.roundness);
   const shapeErr = (opennessErr + widthErr + roundnessErr) / 3;
 
-  let volPenalty = 0;
-  if (t.volume != null && t.volume > 0.04 && volume < 0.03) {
-    volPenalty = 0.12;
+  const spokenHit = spokenMatches(step, spokenHint);
+  const voiceOk = voiceHeard(step, volume, spokenHit);
+
+  // Shape band — slightly forgiving so real faces can pass.
+  let shapeMatch: StepScore["match"] = "try_again";
+  if (shapeErr < 0.16) shapeMatch = "good";
+  else if (shapeErr < 0.3) shapeMatch = "close";
+
+  let match: StepScore["match"] = shapeMatch;
+  if (needsVoice(step) && !voiceOk) {
+    // Looks okay but no voice → never "good".
+    if (shapeMatch === "good") match = "close";
+    else if (shapeMatch === "close" && shapeErr > 0.22) match = "try_again";
+  }
+  if (spokenHit && shapeMatch !== "try_again") {
+    // STT heard the sound — nudge up when shape is in the ballpark.
+    if (match === "close" && shapeErr < 0.24) match = "good";
   }
 
-  const err = shapeErr + volPenalty;
-  let match: StepScore["match"] = "try_again";
-  if (err < 0.14) match = "good";
-  else if (err < 0.28) match = "close";
-
-  const cue = shortfallCue(step, lips, opennessErr, widthErr, roundnessErr, match, volume);
+  const cue = shortfallCue(
+    step,
+    lips,
+    opennessErr,
+    widthErr,
+    roundnessErr,
+    match,
+    volume,
+    voiceOk,
+    spokenHit,
+  );
   return {
     stepId: step.id,
     match,
+    shapeMatch,
+    needsVoice: needsVoice(step),
+    voiceOk,
     cue,
     opennessErr,
     widthErr,
@@ -46,9 +103,16 @@ function shortfallCue(
   rErr: number,
   match: StepScore["match"],
   volume: number,
+  voiceOk: boolean,
+  spokenHit: boolean,
 ): string {
   if (match === "good") {
-    return `Nice — “${step.speakAs}” looks right.`;
+    if (spokenHit) return `Heard “${step.speakAs}” — mouth looks right.`;
+    return `Nice — “${step.speakAs}” looks and sounds right.`;
+  }
+
+  if (needsVoice(step) && !voiceOk) {
+    return `Say “${step.speakAs}” out loud — I’m listening (voice is low).`;
   }
 
   const worst =
@@ -57,10 +121,6 @@ function shortfallCue(
       : wErr >= rErr
         ? "wide"
         : "round";
-
-  if (step.targets.volume != null && step.targets.volume > 0.04 && volume < 0.03) {
-    return `Almost — add a little voice on “${step.speakAs}”.`;
-  }
 
   if (worst === "round") {
     if (lips.roundness < step.targets.roundness) {
@@ -85,7 +145,6 @@ function shortfallCue(
 
 /**
  * Score a recreate pass: peak lips sampled per step window.
- * `samples` is ordered list of { stepIndex, lips, volume } captured during recreate.
  */
 export function scoreAttempt(
   lesson: LessonMemory,
@@ -97,7 +156,10 @@ export function scoreAttempt(
       return {
         stepId: step.id,
         match: "try_again" as const,
-        cue: `Let’s try “${step.speakAs}” again — watch first if you need.`,
+        shapeMatch: "try_again" as const,
+        needsVoice: needsVoice(step),
+        voiceOk: false,
+        cue: `Let’s try “${step.speakAs}” again — speak it while shaping your mouth.`,
         opennessErr: 1,
         widthErr: 1,
         roundnessErr: 1,
@@ -117,10 +179,10 @@ export function scoreAttempt(
   const firstMiss = scores.find((s) => s.match !== "good");
   const summary =
     overall === "good"
-      ? `Beautiful work on “${lesson.text}” — you matched the shapes.`
+      ? `Beautiful work on “${lesson.text}” — lips and voice lined up.`
       : overall === "close"
         ? `Close on “${lesson.text}”! ${firstMiss?.cue ?? "One more slow try."}`
-        : `Keep going — ${firstMiss?.cue ?? "Watch again, then recreate slowly."}`;
+        : `Keep going — ${firstMiss?.cue ?? "Shape the mouth and say it out loud."}`;
 
   return { overall, scores, summary };
 }
@@ -139,4 +201,8 @@ export function shapeDistance(lips: LipFeatures, step: LessonStep): number {
       Math.abs(lips.roundness - t.roundness)) /
       3,
   );
+}
+
+export function isVoiceActive(volume: number): boolean {
+  return volume >= 0.055;
 }

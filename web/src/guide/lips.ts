@@ -81,8 +81,32 @@ export function lipBoundingBox(
   const y = Math.max(0, minY - padY);
   const w = Math.min(1 - x, maxX - minX + padX * 2);
   const h = Math.min(1 - y, maxY - minY + padY * 2);
+  return { x, y, w: Math.max(0.04, w), h: Math.max(0.04, h) };
+}
 
-  return { x, y, w, h };
+/**
+ * Remap a target / ghost mouth into the user's lip crop box so both
+ * overlay in the same place (racing-game ghost style).
+ */
+export function alignLandmarksToBox(
+  landmarks: Point[],
+  targetBox: { x: number; y: number; w: number; h: number },
+): Point[] | null {
+  const src = lipBoundingBox(landmarks, 0.12);
+  if (!src) return null;
+  const out: Point[] = landmarks.map((p) => ({ ...p }));
+  for (let i = 0; i < landmarks.length; i += 1) {
+    const p = landmarks[i];
+    if (!p) continue;
+    const nx = (p.x - src.x) / src.w;
+    const ny = (p.y - src.y) / src.h;
+    out[i] = {
+      x: targetBox.x + nx * targetBox.w,
+      y: targetBox.y + ny * targetBox.h,
+      z: p.z ?? 0,
+    };
+  }
+  return out;
 }
 
 export type LipMeshBuffers = {

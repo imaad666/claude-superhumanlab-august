@@ -20,11 +20,14 @@ import {
   useSessionRecorder,
 } from "./hooks/useSessionRecorder";
 import { useSpectrogram } from "./hooks/useSpectrogram";
+import { mediapipePoseForViseme } from "./training/visemePoses";
+import { unpackLandmarks } from "./landmarksPack";
 import type { SessionAnalysis } from "./sessionTypes";
 import { findBankLesson } from "./training/bank";
+import { buildSessionLessons } from "./training/buildSessionLessons";
 import { LessonPicker } from "./training/LessonPicker";
 import { LessonPlayer } from "./training/LessonPlayer";
-import type { TrainerMode } from "./training/types";
+import type { LessonMemory, TrainerMode } from "./training/types";
 import { useLessonSession } from "./training/useLessonSession";
 import type { GuideMode, TranscriptWord } from "./types";
 import { type VisemeId } from "./visemes";
@@ -62,6 +65,8 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
     total: number;
   } | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [buildingLessons, setBuildingLessons] = useState(false);
+  const [builtLessons, setBuiltLessons] = useState<LessonMemory[] | null>(null);
 
   const cameraActive =
     (!isLive && trainerMode === "free" && active) ||
@@ -94,33 +99,34 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
     [face.blendshapes],
   );
 
+  const trackingReady = Boolean(cameraActive && face.landmarks);
+
+  const fullTranscript = transcript.words.map((w) => w.text).join(" ");
+  const recentWords = transcript.words.map((w) => w.text);
+  const spokenHint = `${fullTranscript} ${transcript.interim}`.trim();
+
   const lesson = useLessonSession(
     isLive ? "free" : trainerMode,
     lips,
     spectro.volume,
+    trackingReady,
+    spokenHint,
   );
 
+  // Learn modes: keep camera on for pick, guide, and result (no dead empty panels)
   useEffect(() => {
     if (!isLearn) {
       setLearnCam(false);
       return;
     }
-    if (lesson.phase === "recreate") {
-      setLearnCam(true);
-      setActive(true);
-    } else {
-      setLearnCam(false);
-      setActive(false);
-    }
-  }, [isLearn, lesson.phase]);
+    setLearnCam(true);
+    setActive(true);
+  }, [isLearn]);
 
   const suggestedViseme = useMemo(
     () => coachTarget ?? lips.visemeGuess,
     [coachTarget, lips.visemeGuess],
   );
-
-  const fullTranscript = transcript.words.map((w) => w.text).join(" ");
-  const recentWords = transcript.words.map((w) => w.text);
 
   const brain = useBrain({
     enabled: !isLive && trainerMode === "free" && active,
@@ -143,6 +149,7 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
     pitchHint: spectro.pitchHint,
     expression,
     lipImage: lipFrame,
+    landmarks: face.landmarks,
     transcript: fullTranscript,
     recentWords,
     words: transcript.words,
@@ -214,13 +221,14 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
       setAnalysis(null);
       setAnalyzeError(null);
       setAnalyzeProgress(null);
+      setBuiltLessons(null);
       transcript.clear();
     }
     setActive((value) => !value);
   }, [active, isLive, transcript]);
 
   const onAnalyze = useCallback(async () => {
-    if (!recorder.session || analyzing) return;
+    if (!recorder.session || analyzing || buildingLessons) return;
     setAnalyzing(true);
     setAnalyzeError(null);
     setAnalyzeProgress({ done: 0, total: 0 });
@@ -242,31 +250,34 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
       setAnalyzing(false);
       setAnalyzeProgress(null);
     }
-  }, [recorder.session, analyzing]);
+  }, [recorder.session, analyzing, buildingLessons]);
+
+  const onBuildLessons = useCallback(async () => {
+    if (!recorder.session || buildingLessons || analyzing) return;
+    setBuildingLessons(true);
+    setAnalyzeError(null);
+    try {
+      const result = await buildSessionLessons(recorder.session);
+      setBuiltLessons(result.lessons);
+    } catch (err) {
+      setAnalyzeError(
+        err instanceof Error ? err.message : "Could not build lessons",
+      );
+    } finally {
+      setBuildingLessons(false);
+    }
+  }, [recorder.session, buildingLessons, analyzing]);
 
   const onDiscard = useCallback(() => {
     recorder.discard();
     setAnalysis(null);
     setAnalyzeError(null);
     setAnalyzeProgress(null);
+    setBuiltLessons(null);
     transcript.clear();
   }, [recorder, transcript]);
 
-  const beginRecreate = useCallback(() => {
-    setLearnCam(true);
-    setActive(true);
-    lesson.beginRecreate();
-  }, [lesson]);
-
-  const watchAgain = useCallback(() => {
-    setLearnCam(false);
-    setActive(false);
-    lesson.watchAgain();
-  }, [lesson]);
-
   const backToPick = useCallback(() => {
-    setLearnCam(false);
-    setActive(false);
     lesson.backToPick();
   }, [lesson]);
 
@@ -279,19 +290,24 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
   const brainPill = (() => {
     if (isLive) {
       if (active) return `Recording · ${formatDuration(recorder.elapsedMs)}`;
+      if (buildingLessons) return "Brain · building lessons…";
+      if (builtLessons?.length) {
+        return `Brain · ${builtLessons.length} word lesson${builtLessons.length === 1 ? "" : "s"}`;
+      }
       if (analyzing) return "Brain · reviewing…";
       if (analysis) {
         return analysis.overall.source === "ollama"
           ? "Brain · session ready"
           : "Brain · session (local)";
       }
-      if (recorder.session) return "Brain · waiting to analyze";
+      if (recorder.session) return "Brain · ready to build";
       return "Brain · record first";
     }
     if (isLearn) {
       if (lesson.busy) return "Brain · building lesson…";
-      if (lesson.phase === "watch") return "Lesson · watch";
-      if (lesson.phase === "recreate") return "Lesson · your turn";
+      if (lesson.phase === "guide") {
+        return trackingReady ? "Lesson · guiding live" : "Lesson · find face";
+      }
       if (lesson.phase === "result") return "Lesson · feedback";
       return "Lesson · pick";
     }
@@ -307,7 +323,22 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
     isLive && !active ? recorder.session?.mediaUrl ?? null : null;
 
   const coachForced =
-    isLearn && lesson.currentStep ? lesson.currentStep.viseme : coachTarget;
+    isLearn && lesson.phase === "guide" && lesson.currentStep
+      ? lesson.currentStep.viseme
+      : isLearn
+        ? null
+        : coachTarget;
+
+  const teacherLandmarks = useMemo(() => {
+    if (!isLearn || lesson.phase !== "guide") return null;
+    return unpackLandmarks(lesson.currentStep?.teacherLandmarks ?? null);
+  }, [isLearn, lesson.phase, lesson.currentStep]);
+
+  const ghostLandmarks = useMemo(() => {
+    if (!isLearn || lesson.phase !== "guide" || !lesson.currentStep) return null;
+    if (teacherLandmarks?.length) return teacherLandmarks;
+    return mediapipePoseForViseme(lesson.currentStep.viseme);
+  }, [isLearn, lesson.phase, lesson.currentStep, teacherLandmarks]);
 
   return (
     <div className="guide-shell">
@@ -355,14 +386,18 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
         </div>
         <div className="guide-topbar-actions">
           <span className="guide-pill brain-pill">{brainPill}</span>
-          {isLive && recorder.session && !active && !analysis && (
+          {isLive && recorder.session && !active && !builtLessons?.length && (
             <button
               type="button"
               className="btn btn-accent"
-              disabled={analyzing || recorder.session.samples.length === 0}
-              onClick={() => void onAnalyze()}
+              disabled={
+                analyzing ||
+                buildingLessons ||
+                recorder.session.samples.length === 0
+              }
+              onClick={() => void onBuildLessons()}
             >
-              {analyzing ? "Analyzing…" : "Analyze"}
+              {buildingLessons ? "Building…" : "Build lessons"}
             </button>
           )}
           {(isLive || trainerMode === "free") && (
@@ -370,7 +405,7 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
               type="button"
               className={active ? "btn btn-primary" : "btn btn-accent"}
               onClick={toggleActive}
-              disabled={analyzing}
+              disabled={analyzing || buildingLessons}
             >
               {isLive
                 ? active
@@ -386,7 +421,11 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
         </div>
       </header>
 
-      <div className="guide-grid">
+      <div
+        className={`guide-grid ${isLearn ? "is-learn" : ""} ${
+          isLearn && lesson.phase === "result" ? "is-result" : ""
+        } ${isLearn && lesson.phase === "pick" ? "is-pick" : ""}`}
+      >
         <div className="guide-left">
           <section className="guide-panel camera-panel">
             <header className="guide-panel-head">
@@ -398,13 +437,11 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
                     ? isLive
                       ? "Recording"
                       : isLearn
-                        ? "Your turn"
+                        ? "Live guide"
                         : "Live"
                     : playbackUrl
                       ? "Playback"
-                      : isLearn && lesson.phase === "watch"
-                        ? "Watch mode"
-                        : "Off"}
+                      : "Off"}
               </span>
             </header>
             <div className="camera-frame">
@@ -426,11 +463,9 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
               {!cameraActive && !playbackUrl && !camera.error && (
                 <p className="guide-empty">
                   {isLive
-                    ? "Press Record — model runs after you stop"
+                    ? "Press Record — Gemma builds word lessons after you stop"
                     : isLearn
-                      ? lesson.phase === "watch"
-                        ? "Watch the lip coach — camera waits for Your turn"
-                        : "Pick a word or sentence to begin"
+                      ? "Starting camera…"
                       : "Press Start"}
                 </p>
               )}
@@ -450,8 +485,16 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
             video={cameraActive && !playbackUrl ? videoEl : null}
             lipBox={cameraActive ? face.lipBox : null}
             landmarks={cameraActive ? face.landmarks : null}
+            ghostLandmarks={
+              isLearn && lesson.phase === "guide" ? ghostLandmarks : null
+            }
             status={face.status}
             error={face.error}
+            poseLabel={
+              isLearn && lesson.phase === "guide" && lesson.currentStep
+                ? `Target ${lesson.currentStep.label}`
+                : null
+            }
           />
         </div>
 
@@ -471,11 +514,18 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
               stepIndex={lesson.stepIndex}
               liveCue={lesson.liveScore?.cue}
               liveMatch={lesson.liveScore?.match}
+              shapeMatch={lesson.liveScore?.shapeMatch}
+              voiceOk={lesson.liveScore?.voiceOk}
+              needsVoice={lesson.liveScore?.needsVoice}
+              goodMs={lesson.goodMs}
+              goodHoldMs={lesson.goodHoldMs}
+              trackingReady={trackingReady}
+              volume={lesson.volume}
+              voiceActive={lesson.voiceActive}
               result={lesson.result}
-              onWatchAgain={watchAgain}
-              onReady={beginRecreate}
               onBackToPick={backToPick}
               onRetry={retry}
+              onSkip={lesson.advance}
             />
           )
         ) : (
@@ -496,64 +546,67 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
               session={active ? null : recorder.session}
               analysis={active ? null : analysis}
               analyzing={analyzing}
+              buildingLessons={buildingLessons}
+              builtLessons={active ? null : builtLessons}
               recording={active}
               elapsedMs={recorder.elapsedMs}
               sampleCount={recorder.sampleCount}
               progress={analyzeProgress}
               error={analyzeError}
               onAnalyze={() => void onAnalyze()}
+              onBuildLessons={() => void onBuildLessons()}
               onDiscard={onDiscard}
             />
           ) : (
             <LipCoachPanel
               mode={mode}
-              lips={
-                isLearn && lesson.phase === "watch" && lesson.currentStep
-                  ? {
-                      openness: lesson.currentStep.targets.openness,
-                      width: lesson.currentStep.targets.width,
-                      roundness: lesson.currentStep.targets.roundness,
-                      visemeGuess: lesson.currentStep.viseme,
-                    }
-                  : lips
-              }
+              lips={lips}
               expression={expression}
               landmarks={face.landmarks}
-              tracking={
-                isLearn && lesson.phase === "watch"
-                  ? Boolean(lesson.demoLandmarks)
-                  : cameraActive && Boolean(face.landmarks)
-              }
+              tracking={cameraActive && Boolean(face.landmarks)}
               brainCue={
                 isLearn
-                  ? (lesson.liveScore?.cue ??
-                    lesson.currentStep?.cue ??
-                    lesson.result?.summary ??
-                    null)
+                  ? lesson.phase === "guide"
+                    ? (lesson.liveScore?.cue ??
+                      lesson.currentStep?.cue ??
+                      null)
+                    : null
                   : (brain.insight?.lipCue ?? null)
               }
               lipMatch={
                 isLearn
-                  ? (lesson.liveScore?.match ?? lesson.result?.overall ?? null)
+                  ? lesson.phase === "guide"
+                    ? (lesson.liveScore?.match ?? null)
+                    : null
                   : (brain.insight?.lipMatch ?? null)
               }
               onSelectTarget={isLearn ? undefined : onSelectTarget}
-              forcedViseme={isLearn ? coachForced : null}
-              demoLandmarks={
-                isLearn && lesson.phase === "watch"
-                  ? lesson.demoLandmarks
-                  : null
+              forcedViseme={
+                isLearn && lesson.phase === "guide" ? coachForced : coachTarget
               }
-              demo={isLearn && lesson.phase === "watch"}
+              demo={Boolean(
+                isLearn && lesson.phase === "guide" && teacherLandmarks,
+              )}
+              demoLandmarks={
+                isLearn && lesson.phase === "guide" ? teacherLandmarks : null
+              }
               hidePicks={isLearn}
-              headerTitle={isLearn ? "Watch & copy" : "Lip coach"}
+              headerTitle={
+                isLearn
+                  ? lesson.phase === "guide" && teacherLandmarks
+                    ? "Teacher mouth"
+                    : "Your lips"
+                  : "Lip coach"
+              }
               statusPill={
-                isLearn && lesson.currentStep
-                  ? `${lesson.currentStep.label} · “${lesson.currentStep.speakAs}”`
-                  : undefined
+                isLearn && lesson.phase === "guide" && lesson.currentStep
+                  ? `Make “${lesson.currentStep.speakAs}” · ${lesson.currentStep.label}`
+                  : isLearn && lesson.phase === "result"
+                    ? "Live"
+                    : undefined
               }
               speakAs={
-                isLearn && lesson.currentStep
+                isLearn && lesson.phase === "guide" && lesson.currentStep
                   ? lesson.currentStep.speakAs
                   : undefined
               }
@@ -566,22 +619,7 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
                   ? null
                   : (analysis?.overall ?? null)
                 : isLearn
-                  ? lesson.result
-                    ? {
-                        tone: "warm",
-                        mood: "encouraging",
-                        intention: "practicing",
-                        summary: lesson.result.summary,
-                        lipMatch: lesson.result.overall,
-                        lipCue:
-                          lesson.result.scores.find((s) => s.match !== "good")
-                            ?.cue ?? "Great effort — try again anytime.",
-                        words: [],
-                        source: "heuristic",
-                        model: null,
-                        usedVision: false,
-                      }
-                    : null
+                  ? null
                   : brain.insight
             }
             brainError={
@@ -591,7 +629,11 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
             serverOk={brain.serverOk}
             waking={isLive || isLearn ? false : brain.waking}
             thinking={
-              isLive ? analyzing : isLearn ? lesson.busy : brain.thinking
+              isLive
+                ? analyzing || buildingLessons
+                : isLearn
+                  ? lesson.busy
+                  : brain.thinking
             }
             lips={lips}
             expression={expression}
@@ -602,10 +644,14 @@ export function GuideDashboard({ mode, initialWord }: GuideDashboardProps) {
             idleHint={
               isLive
                 ? active
-                  ? "Recording signals now — vision coaching waits until you stop."
-                  : "Record someone speaking, then Analyze — vision runs after the clip."
+                  ? "Recording lip vectors now — Gemma builds lessons after you stop."
+                  : "Record someone speaking, then Build word lessons — real mouth shapes go to Personal Trainer."
                 : isLearn
-                  ? "Pick a word or sentence — watch the mouths, then recreate."
+                  ? lesson.phase === "guide"
+                    ? "Blue ghost = target. Match it and speak the sound."
+                    : lesson.phase === "result"
+                      ? "Camera stays on — try again anytime."
+                      : "Pick a word to start."
                   : undefined
             }
           />

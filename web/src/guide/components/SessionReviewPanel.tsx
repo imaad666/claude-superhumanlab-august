@@ -1,18 +1,22 @@
 import { formatDuration } from "../hooks/useSessionRecorder";
 import type { SessionAnalysis } from "../sessionTypes";
 import type { GuideSession } from "../sessionTypes";
+import type { LessonMemory } from "../training/types";
 import { TONE_LABELS } from "../types";
 
 type SessionReviewPanelProps = {
   session: GuideSession | null;
   analysis: SessionAnalysis | null;
   analyzing: boolean;
+  buildingLessons?: boolean;
+  builtLessons?: LessonMemory[] | null;
   recording?: boolean;
   elapsedMs?: number;
   sampleCount?: number;
   progress: { done: number; total: number } | null;
   error: string | null;
   onAnalyze: () => void;
+  onBuildLessons: () => void;
   onDiscard: () => void;
 };
 
@@ -20,14 +24,19 @@ export function SessionReviewPanel({
   session,
   analysis,
   analyzing,
+  buildingLessons = false,
+  builtLessons = null,
   recording = false,
   elapsedMs = 0,
   sampleCount = 0,
   progress,
   error,
   onAnalyze,
+  onBuildLessons,
   onDiscard,
 }: SessionReviewPanelProps) {
+  const busy = analyzing || buildingLessons;
+
   if (recording) {
     return (
       <section className="guide-panel session-panel">
@@ -37,11 +46,12 @@ export function SessionReviewPanel({
         </header>
         <div className="session-body">
           <p className="insight-summary">
-            Capturing lips, voice, and transcript —{" "}
+            Capturing MediaPipe lip vectors, voice, and transcript —{" "}
             {formatDuration(elapsedMs)} · {sampleCount} samples.
           </p>
           <p className="insight-summary muted">
-            Stop when they finish. Then Analyze runs the model on the clip.
+            Stop when they finish. Gemma turns the clip into word lessons with
+            real teacher mouth shapes.
           </p>
         </div>
       </section>
@@ -57,8 +67,8 @@ export function SessionReviewPanel({
         </header>
         <div className="session-body">
           <p className="insight-summary muted">
-            Record a clip of someone speaking. The vision model runs after you
-            stop — not live.
+            Record a teacher or friend speaking. After you stop, the model builds
+            practice lessons word-by-word from their real lip vectors.
           </p>
         </div>
       </section>
@@ -72,13 +82,17 @@ export function SessionReviewPanel({
       <header className="guide-panel-head">
         <h2>Session</h2>
         <span className="guide-pill">
-          {analyzing
-            ? progress
-              ? `Analyzing ${progress.done}/${progress.total}`
-              : "Analyzing…"
-            : analysis
-              ? "Reviewed"
-              : "Ready"}
+          {buildingLessons
+            ? "Building lessons…"
+            : analyzing
+              ? progress
+                ? `Analyzing ${progress.done}/${progress.total}`
+                : "Analyzing…"
+              : builtLessons?.length
+                ? `${builtLessons.length} lessons`
+                : analysis
+                  ? "Reviewed"
+                  : "Ready"}
         </span>
       </header>
 
@@ -89,6 +103,10 @@ export function SessionReviewPanel({
           <span>{session.samples.length} samples</span>
           <span>·</span>
           <span>{session.words.length} words</span>
+          <span>·</span>
+          <span>
+            {session.samples.filter((s) => s.landmarks).length} lip tracks
+          </span>
         </div>
 
         {session.mediaUrl && (
@@ -98,6 +116,18 @@ export function SessionReviewPanel({
             controls
             playsInline
           />
+        )}
+
+        {builtLessons && builtLessons.length > 0 && (
+          <div className="session-lessons-built">
+            <p className="insight-summary">
+              Saved to Personal Trainer → Learn a word:{" "}
+              {builtLessons.map((l) => l.text).join(", ")}
+            </p>
+            <p className="insight-summary muted">
+              Each lesson carries the teacher’s MediaPipe mouth shapes.
+            </p>
+          </div>
         )}
 
         {overall ? (
@@ -119,47 +149,41 @@ export function SessionReviewPanel({
             </div>
             <p className="insight-summary">{overall.summary}</p>
             {overall.lipCue && <p className="insight-cue">{overall.lipCue}</p>}
-
-            {analysis && analysis.segments.length > 1 && (
-              <ul className="session-segments" aria-label="Timeline">
-                {analysis.segments.map((seg) => (
-                  <li key={seg.t} className="session-segment">
-                    <span className="session-segment-t">
-                      {formatDuration(seg.t)}
-                    </span>
-                    <span className={`insight-chip tone-${seg.insight.tone}`}>
-                      {TONE_LABELS[seg.insight.tone] ?? seg.insight.tone}
-                    </span>
-                    <span className="session-segment-mood">
-                      {seg.insight.mood} · {seg.insight.intention}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </>
         ) : (
-          <p className="insight-summary muted">
-            {error ??
-              "Press Analyze to run Gemma on this recording (lip crops + metrics)."}
-          </p>
+          !builtLessons?.length && (
+            <p className="insight-summary muted">
+              {error ??
+                "Build lessons with Gemma — attaches real teacher lip vectors for practice."}
+            </p>
+          )
         )}
 
         <div className="session-actions">
-          {!analysis && (
+          {!builtLessons?.length && (
             <button
               type="button"
               className="btn btn-accent btn-compact"
-              disabled={analyzing || session.samples.length === 0}
+              disabled={busy || session.samples.length === 0}
+              onClick={onBuildLessons}
+            >
+              {buildingLessons ? "Building…" : "Build word lessons"}
+            </button>
+          )}
+          {!analysis && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-compact"
+              disabled={busy || session.samples.length === 0}
               onClick={onAnalyze}
             >
-              {analyzing ? "Analyzing…" : "Analyze session"}
+              {analyzing ? "Analyzing…" : "Analyze tone"}
             </button>
           )}
           <button
             type="button"
             className="btn btn-ghost btn-compact"
-            disabled={analyzing}
+            disabled={busy}
             onClick={onDiscard}
           >
             Discard

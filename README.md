@@ -44,10 +44,10 @@ Lip crop JPEG + all metrics → local Gemma vision
 
 ## Live Guide
 
-Record a teacher/friend speaking (camera + mic + lip samples). **Gemma runs after you stop** — not continuously live — then review tone / mood / intention across the clip.
+Record a teacher/friend speaking (camera + mic + MediaPipe lip vectors). After you stop, **Gemma builds word-by-word lessons** and attaches the teacher’s real mouth shapes. Those lessons show up in Personal Trainer → Learn a word.
 
 ## Personal Trainer
 
-- **Free practice** — live meters + vision coaching (unchanged).
-- **Learn a word / Learn a sentence** — pick from a starter bank or type your own. Watch animated lip steps (`dog` → `dh · oww · ghh`), then recreate. Scoring is encouraging and points at what to adjust.
+- **Free practice** — live meters + vision coaching.
+- **Learn a word / Learn a sentence** — bank, custom (model), or **captured Live Guide** lessons with teacher MediaPipe vectors. Camera scores your lips live against each sound.
 

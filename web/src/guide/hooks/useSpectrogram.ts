@@ -32,17 +32,31 @@ export function useSpectrogram(
       return;
     }
 
+    // Prefer speech pickup over call AEC (Safari/Mac often under-reports otherwise).
+    for (const track of audioTracks) {
+      try {
+        void track.applyConstraints({
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+        } as MediaTrackConstraints);
+      } catch {
+        /* constraints optional */
+      }
+    }
+
     let cancelled = false;
     let raf = 0;
     const context = new AudioContext();
     const analyser = context.createAnalyser();
     analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.55;
+    analyser.smoothingTimeConstant = 0.35;
     const source = context.createMediaStreamSource(stream);
     source.connect(analyser);
 
     const freq = new Uint8Array(analyser.frequencyBinCount);
     const time = new Uint8Array(analyser.fftSize);
+    let smoothVol = 0;
 
     const draw = () => {
       if (cancelled) return;
@@ -56,15 +70,25 @@ export function useSpectrogram(
         sum += v * v;
         peak = Math.max(peak, Math.abs(v));
       }
-      // Blend RMS + peak so quiet speech still registers
       const rms = Math.sqrt(sum / time.length);
-      const volume = Math.min(1, rms * 2.8 + peak * 0.45);
+
+      // Speech-band energy (roughly 80Hz–3kHz) — better than raw RMS alone.
+      let speechEnergy = 0;
+      const lo = Math.floor(freq.length * 0.02);
+      const hi = Math.floor(freq.length * 0.35);
+      for (let i = lo; i < hi; i += 1) speechEnergy += freq[i];
+      speechEnergy /= Math.max(1, (hi - lo) * 255);
+
+      // Gain tuned for laptop mics — quiet speech should still clear ~0.08–0.2.
+      const instant = Math.min(
+        1,
+        rms * 9.5 + peak * 1.35 + speechEnergy * 1.1,
+      );
+      smoothVol = smoothVol * 0.55 + instant * 0.45;
+      const volume = Math.min(1, smoothVol);
 
       let weighted = 0;
       let total = 0;
-      // Focus on speech band bins (~80Hz–3kHz-ish)
-      const lo = Math.floor(freq.length * 0.02);
-      const hi = Math.floor(freq.length * 0.35);
       for (let i = lo; i < hi; i += 1) {
         weighted += (i - lo) * freq[i];
         total += freq[i];

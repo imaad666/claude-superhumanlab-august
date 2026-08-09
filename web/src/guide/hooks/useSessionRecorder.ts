@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExpressionFeatures, LipFeatures } from "../features";
+import { packLandmarks } from "../landmarksPack";
+import type { Point } from "../lips";
 import type { GuideSession, SessionSample } from "../sessionTypes";
 import type { TranscriptWord } from "../types";
 
@@ -11,10 +13,11 @@ type RecorderInput = {
   pitchHint: number;
   expression: ExpressionFeatures;
   lipImage: string | null;
+  landmarks: Point[] | null;
   transcript: string;
   recentWords: string[];
   words: TranscriptWord[];
-  /** How often to sample metrics / lip crops (ms). */
+  /** How often to sample metrics / lip vectors (ms). */
   sampleEveryMs?: number;
 };
 
@@ -36,14 +39,14 @@ function pickMime(): string | undefined {
 }
 
 /**
- * Live Guide recorder — captures A/V + metric samples while active.
- * Model analysis happens after stop (see analyzeSession).
+ * Live Guide recorder — captures A/V + MediaPipe lip vectors while active.
+ * Model lesson-build / analysis happens after stop.
  */
 export function useSessionRecorder(input: RecorderInput) {
   const {
     active,
     stream,
-    sampleEveryMs = 1200,
+    sampleEveryMs = 280,
   } = input;
 
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -184,13 +187,22 @@ export function useSessionRecorder(input: RecorderInput) {
         return;
       }
 
+      // Keep lip crops sparse — vectors every tick, JPEG less often.
+      const lastWithImage = [...samplesRef.current]
+        .reverse()
+        .find((s) => s.lipImage);
+      const wantImage =
+        Boolean(cur.lipImage) &&
+        (!lastWithImage || Date.now() - started - lastWithImage.t >= 1100);
+
       samplesRef.current.push({
         t: Date.now() - started,
         lips: { ...cur.lips },
         volume: cur.volume,
         pitchHint: cur.pitchHint,
         expression: { ...cur.expression },
-        lipImage: cur.lipImage,
+        lipImage: wantImage ? cur.lipImage : null,
+        landmarks: packLandmarks(cur.landmarks),
         transcript: cur.transcript,
         recentWords: [...cur.recentWords],
       });

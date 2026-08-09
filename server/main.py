@@ -634,6 +634,7 @@ async def root() -> dict[str, Any]:
         "wake": "/wake",
         "analyze": "POST /analyze",
         "lesson": "POST /lesson",
+        "session_lessons": "POST /session-lessons",
         "model": OLLAMA_MODEL,
         "vision": True,
     }
@@ -715,3 +716,252 @@ async def lesson(req: LessonRequest) -> LessonResponse:
         return _heuristic_lesson("ah", req.kind)
     refined = await _ollama_lesson(clean, req.kind)
     return refined or _heuristic_lesson(clean, req.kind)
+
+
+# ── Live Guide → word lessons (model brains + MediaPipe sample indexes) ──
+
+
+class SessionSampleIn(BaseModel):
+    index: int = 0
+    t_ms: float = 0
+    openness: float = 0
+    width: float = 0
+    roundness: float = 0
+    volume: float = 0
+    viseme: str = "rest"
+    recent_words: list[str] = Field(default_factory=list)
+    has_landmarks: bool = False
+    has_lip_image: bool = False
+
+
+class SessionKeyframeIn(BaseModel):
+    sample_index: int = 0
+    lip_image: str | None = None
+    recent_words: list[str] = Field(default_factory=list)
+
+
+class SessionLessonsRequest(BaseModel):
+    transcript: str = ""
+    words: list[str] = Field(default_factory=list)
+    samples: list[SessionSampleIn] = Field(default_factory=list)
+    keyframes: list[SessionKeyframeIn] = Field(default_factory=list)
+
+
+class LessonStepOutExt(LessonStepOut):
+    sample_index: int | None = None
+
+
+class SessionWordLessonOutExt(BaseModel):
+    text: str
+    tip: str
+    sample_index: int = 0
+    steps: list[LessonStepOutExt]
+
+
+class SessionLessonsResponseExt(BaseModel):
+    tip: str
+    words: list[SessionWordLessonOutExt]
+    source: Literal["ollama", "heuristic"]
+    model: str | None = None
+    used_vision: bool = False
+
+
+def _best_sample_index(req: SessionLessonsRequest, word: str) -> int:
+    best_idx = 0
+    best_score = -1.0
+    for s in req.samples:
+        hit = any(word in rw.lower() for rw in s.recent_words)
+        score = (2.0 if hit else 0.0) + (1.0 if s.has_landmarks else 0.0) + s.volume
+        if score > best_score:
+            best_score = score
+            best_idx = s.index
+    return best_idx
+
+
+def _heuristic_session_lessons(req: SessionLessonsRequest) -> SessionLessonsResponseExt:
+    words = [w for w in req.words if w.strip()] or [
+        p for p in re.findall(r"[A-Za-z']+", req.transcript.lower()) if p
+    ]
+    words = list(dict.fromkeys(words))[:12]
+    out: list[SessionWordLessonOutExt] = []
+    for word in words:
+        lesson = _heuristic_lesson(word, "word")
+        best_idx = _best_sample_index(req, word)
+        steps: list[LessonStepOutExt] = []
+        for i, st in enumerate(lesson.steps):
+            nearby = best_idx
+            if req.samples:
+                offset = i - len(lesson.steps) // 2
+                pos = max(0, min(len(req.samples) - 1, best_idx + offset))
+                nearby = req.samples[pos].index
+            steps.append(
+                LessonStepOutExt(
+                    label=st.label,
+                    speak_as=st.speak_as,
+                    viseme=st.viseme,
+                    cue=st.cue,
+                    hold_ms=st.hold_ms,
+                    sample_index=nearby,
+                )
+            )
+        out.append(
+            SessionWordLessonOutExt(
+                text=word,
+                tip=lesson.tip,
+                sample_index=best_idx,
+                steps=steps,
+            )
+        )
+    return SessionLessonsResponseExt(
+        tip=f"Built {len(out)} word lesson(s) from this clip.",
+        words=out,
+        source="heuristic",
+        model=None,
+        used_vision=False,
+    )
+
+
+async def _ollama_session_lessons(req: SessionLessonsRequest) -> SessionLessonsResponseExt | None:
+    words = [w for w in req.words if w.strip()][:12]
+    if not words:
+        words = list(dict.fromkeys(re.findall(r"[A-Za-z']+", req.transcript.lower())))[:12]
+    if not words:
+        return None
+
+    sample_lines = []
+    for s in req.samples[:40]:
+        sample_lines.append(
+            f"[{s.index}] t={int(s.t_ms)}ms open={s.openness:.2f} wide={s.width:.2f} "
+            f"round={s.roundness:.2f} vol={s.volume:.2f} viseme={s.viseme} "
+            f"words={s.recent_words[-4:]} landmarks={s.has_landmarks}"
+        )
+
+    prompt = f"""You are Speak & See. Turn a Live Guide recording of a TEACHER into
+word-by-word lip practice lessons for a Deaf/HoH learner.
+
+Return ONLY JSON:
+{{
+  "tip": "one short tip for practicing from this clip",
+  "words": [
+    {{
+      "text": "hello",
+      "tip": "short tip",
+      "sample_index": 3,
+      "steps": [
+        {{"label":"H","speak_as":"heh","viseme":"E","cue":"Wide smile","hold_ms":600,"sample_index":2}}
+      ]
+    }}
+  ]
+}}
+
+Rules:
+- One lesson object per word in words={words}
+- viseme MUST be one of: A,E,I,O,U,M,F,L,rest
+- speak_as is how to mouth it (max 8 chars)
+- 2-8 steps per word
+- sample_index MUST be a real sample index (prefer landmarks=True)
+- Use mouth photos if present to refine cues
+- Encouraging, never harsh
+
+transcript={req.transcript!r}
+samples:
+{chr(10).join(sample_lines) if sample_lines else "(none)"}
+"""
+
+    images: list[str] = []
+    for kf in req.keyframes[:3]:
+        img = _strip_b64(kf.lip_image)
+        if img:
+            images.append(img)
+
+    user_msg: dict[str, Any] = {"role": "user", "content": prompt}
+    if images:
+        user_msg["images"] = images
+
+    payload = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        "format": "json",
+        "keep_alive": "30m",
+        "options": {"temperature": 0.2, "num_predict": 700},
+        "messages": [
+            {
+                "role": "system",
+                "content": "Speech lesson builder from teacher video. JSON only. Exact viseme enums.",
+            },
+            user_msg,
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=55.0) as client:
+            res = await client.post(f"{OLLAMA_URL}/api/chat", json=payload)
+            res.raise_for_status()
+            content = res.json().get("message", {}).get("content", "")
+            parsed = _extract_json(content)
+            if not parsed or not isinstance(parsed.get("words"), list):
+                return None
+
+            max_idx = max((s.index for s in req.samples), default=0)
+            out_words: list[SessionWordLessonOutExt] = []
+            for raw in parsed["words"][:12]:
+                if not isinstance(raw, dict):
+                    continue
+                text = re.sub(r"[^a-z']", "", str(raw.get("text") or "").strip().lower())
+                if not text:
+                    continue
+                steps_raw = raw.get("steps")
+                if not isinstance(steps_raw, list) or not steps_raw:
+                    continue
+                word_si = max(0, min(max_idx, int(raw.get("sample_index") or raw.get("sampleIndex") or 0)))
+                steps_out: list[LessonStepOutExt] = []
+                for st in steps_raw[:12]:
+                    if not isinstance(st, dict):
+                        continue
+                    vis = _norm_viseme(st.get("viseme"))
+                    si = int(st.get("sample_index") or st.get("sampleIndex") or word_si)
+                    steps_out.append(
+                        LessonStepOutExt(
+                            label=str(st.get("label") or vis)[:12],
+                            speak_as=str(
+                                st.get("speak_as") or st.get("speakAs") or vis
+                            ).lower()[:16],
+                            viseme=vis,
+                            cue=str(st.get("cue") or "Match the teacher mouth")[:120],
+                            hold_ms=max(
+                                400,
+                                min(1600, int(st.get("hold_ms") or st.get("holdMs") or 650)),
+                            ),
+                            sample_index=max(0, min(max_idx, si)),
+                        )
+                    )
+                if not steps_out:
+                    continue
+                out_words.append(
+                    SessionWordLessonOutExt(
+                        text=text,
+                        tip=_norm_summary(raw.get("tip"), f'Practice "{text}" like the teacher.'),
+                        sample_index=word_si,
+                        steps=steps_out,
+                    )
+                )
+            if not out_words:
+                return None
+            return SessionLessonsResponseExt(
+                tip=_norm_summary(
+                    parsed.get("tip"),
+                    f"Built {len(out_words)} word lesson(s) from this clip.",
+                ),
+                words=out_words,
+                source="ollama",
+                model=OLLAMA_MODEL,
+                used_vision=bool(images),
+            )
+    except Exception:
+        return None
+
+
+@app.post("/session-lessons", response_model=SessionLessonsResponseExt)
+async def session_lessons(req: SessionLessonsRequest) -> SessionLessonsResponseExt:
+    """Build word-by-word practice lessons from a Live Guide recording (Gemma)."""
+    refined = await _ollama_session_lessons(req)
+    return refined or _heuristic_session_lessons(req)
