@@ -1,6 +1,5 @@
 # Speak & See
 
-[Full deck (PPTX)](./Speak-and-See-Deck.pptx)
 
 ![Slide 1 — SLP](./deck/slide-01.png)
 
